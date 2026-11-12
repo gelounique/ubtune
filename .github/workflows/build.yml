@@ -50,7 +50,7 @@ jobs:
         with: { name: pluginval-windows, path: "pv-log/*", if-no-files-found: ignore }
 
   macos:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
