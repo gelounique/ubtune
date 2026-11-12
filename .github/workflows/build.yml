@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build -A x64
       - name: Build (VST3 + Standalone)
         run: cmake --build build --config Release --parallel 4 --target UBTune_VST3 UBTune_Standalone
       - name: pluginval
@@ -47,7 +47,7 @@ jobs:
         with: { name: pluginval-windows, path: "pv-log/*", if-no-files-found: ignore }
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
