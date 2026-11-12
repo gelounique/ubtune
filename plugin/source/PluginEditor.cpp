@@ -354,19 +354,9 @@ UBTuneEditor::UBTuneEditor (UBTuneProcessor& p) : AudioProcessorEditor (p), main
     setResizeLimits (UBTuneMain::W * 6 / 10, UBTuneMain::H * 6 / 10, UBTuneMain::W * 2, UBTuneMain::H * 2);
     if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) UBTuneMain::W / UBTuneMain::H);
     setSize (UBTuneMain::W, UBTuneMain::H);
-   #if ! UBTUNE_SNAPSHOT
-    gl.setComponentPaintingEnabled (true);
-    gl.setContinuousRepainting (false);
-    gl.attachTo (*this);
-   #endif
 }
 
-UBTuneEditor::~UBTuneEditor()
-{
-   #if ! UBTUNE_SNAPSHOT
-    gl.detach();
-   #endif
-}
+UBTuneEditor::~UBTuneEditor() = default;
 
 void UBTuneEditor::resized()
 {

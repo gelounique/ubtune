@@ -1,8 +1,5 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#if ! UBTUNE_SNAPSHOT
- #include <juce_opengl/juce_opengl.h>
-#endif
 #include "PluginProcessor.h"
 #include "ui/Theme.h"
 #include "ui/ParticleRing.h"
@@ -90,7 +87,4 @@ public:
     UBTuneMain& getMain() { return main; }
 private:
     UBTuneMain main;
-   #if ! UBTUNE_SNAPSHOT
-    juce::OpenGLContext gl;
-   #endif
 };

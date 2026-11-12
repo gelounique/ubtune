@@ -82,7 +82,6 @@ target_link_libraries(UBTune
         UBTuneData
         juce::juce_audio_utils
         juce::juce_dsp
-        juce::juce_opengl
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -92,8 +91,9 @@ target_link_libraries(UBTune
 option(UBTUNE_BUILD_SNAPSHOT "Build the UI snapshot tool" OFF)
 if(UBTUNE_BUILD_SNAPSHOT)
     juce_add_console_app(UBTuneSnapshot PRODUCT_NAME "UBTuneSnapshot")
+    set(UBTUNE_TEST_MAIN tests/snapshot.cpp CACHE STRING "test main")
     target_sources(UBTuneSnapshot PRIVATE
-        tests/snapshot.cpp
+        ${UBTUNE_TEST_MAIN}
         plugin/source/PluginProcessor.cpp
         plugin/source/PluginEditor.cpp
         plugin/source/ui/Theme.cpp
