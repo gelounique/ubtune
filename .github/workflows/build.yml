@@ -27,8 +27,11 @@ jobs:
         run: |
           Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
           Expand-Archive pv.zip -DestinationPath pv
-          ./pv/pluginval.exe --strictness-level 7 --validate-in-process --timeout-ms 600000 --output-dir pv-log --validate "build/UBTune_artefacts/Release/VST3/UBTune.vst3"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ./pv/pluginval.exe --strictness-level 7 --verbose --timeout-ms 600000 --output-dir pv-log --validate "build/UBTune_artefacts/Release/VST3/UBTune.vst3" 2>&1 | Tee-Object -FilePath pv-console.txt
+          $code = $LASTEXITCODE
+          Write-Host "pluginval exit code: $code"
+          Get-ChildItem pv-log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 60 }
+          if ($code -ne 0) { exit 1 }
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
@@ -71,7 +74,7 @@ jobs:
           auval -v aufx UbTn Unqb
           curl -sSL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
           unzip -q pv.zip
-          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 7 --validate-in-process --timeout-ms 600000 --output-dir pv-log --validate build/UBTune_artefacts/Release/VST3/UBTune.vst3
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 7 --verbose --timeout-ms 600000 --output-dir pv-log --validate build/UBTune_artefacts/Release/VST3/UBTune.vst3
       - name: Package (.pkg in .dmg)
         run: |
           VER=$(sed -nE 's/^project\(UBTune VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
