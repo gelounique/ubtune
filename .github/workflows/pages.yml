@@ -1,0 +1,20 @@
+# UBTune — publishes web/ to the gh-pages branch (GitHub Pages, ubtune.uniquebaby.de)
+name: Webseite
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch: {}
+permissions: { contents: write }
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push web/ to gh-pages
+        run: |
+          cd web
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="UBTune CI" -c user.email="ci@uniquebaby.de" commit -qm "site ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
