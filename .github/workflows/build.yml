@@ -8,7 +8,9 @@ on:
     paths-ignore: ["web/**", "README.md"]
   workflow_dispatch: {}
 permissions: { contents: write }
-concurrency: { group: build-${{ github.ref }}, cancel-in-progress: true }
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
