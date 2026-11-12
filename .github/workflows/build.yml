@@ -1,0 +1,104 @@
+# UBTune — builds, validates and packages the plugin for Windows + macOS.
+# Push a tag "v1.2.3" to publish a GitHub release with both installers.
+name: Build UBTune
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore: ["web/**", "README.md"]
+  workflow_dispatch: {}
+permissions: { contents: write }
+concurrency: { group: build-${{ github.ref }}, cancel-in-progress: true }
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build (VST3 + Standalone)
+        run: cmake --build build --config Release --parallel 4 --target UBTune_VST3 UBTune_Standalone
+      - name: pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
+          Expand-Archive pv.zip -DestinationPath pv
+          ./pv/pluginval.exe --strictness-level 7 --validate-in-process --timeout-ms 600000 --output-dir pv-log --validate "build/UBTune_artefacts/Release/VST3/UBTune.vst3"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            $p = "${env:ProgramFiles(x86)}\Inno Setup 6"
+            if (-not (Test-Path "$p\ISCC.exe")) { choco install innosetup -y --no-progress }
+            $env:PATH = "$p;$env:PATH"
+          }
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'project\(UBTune VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          iscc /DAppVersion=$ver /DBuildDir="..\..\build\UBTune_artefacts\Release" installer\windows\UBTune.iss
+          Get-FileHash dist\UBTune-Windows-Setup.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  UBTune-Windows-Setup.exe" } | Out-File -Encoding ascii dist\UBTune-Windows-Setup.exe.sha256
+      - uses: actions/upload-artifact@v4
+        with: { name: UBTune-Windows, path: "dist/*" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: pluginval-windows, path: "pv-log/*", if-no-files-found: ignore }
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (Universal arm64 + x86_64)
+        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      - name: Build (VST3 + AU + Standalone)
+        run: |
+          set -o pipefail
+          cmake --build build --config Release --parallel 4 --target UBTune_VST3 UBTune_AU UBTune_Standalone -- -quiet
+      - name: Check universal binaries
+        run: |
+          lipo -info build/UBTune_artefacts/Release/VST3/UBTune.vst3/Contents/MacOS/UBTune
+          lipo -info build/UBTune_artefacts/Release/AU/UBTune.component/Contents/MacOS/UBTune
+      - name: auval + pluginval
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
+          cp -R build/UBTune_artefacts/Release/AU/UBTune.component ~/Library/Audio/Plug-Ins/Components/
+          codesign --force --deep -s - ~/Library/Audio/Plug-Ins/Components/UBTune.component
+          killall -9 AudioComponentRegistrar || true
+          sleep 3
+          auval -v aufx UbTn Unqb
+          curl -sSL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pv.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 7 --validate-in-process --timeout-ms 600000 --output-dir pv-log --validate build/UBTune_artefacts/Release/VST3/UBTune.vst3
+      - name: Package (.pkg in .dmg)
+        run: |
+          VER=$(sed -nE 's/^project\(UBTune VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+          bash installer/mac/package.sh build/UBTune_artefacts/Release "$VER"
+      - uses: actions/upload-artifact@v4
+        with: { name: UBTune-macOS, path: "dist/*" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: pluginval-macos, path: "pv-log/*", if-no-files-found: ignore }
+
+  release:
+    needs: [windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true, pattern: "UBTune-*" }
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: UBTune ${{ github.ref_name }}
+          files: dist/*
+          body: |
+            **UBTune ${{ github.ref_name }}** — Realtime Pitch Correction by **unique & Mbezza** (Gelo Santino Mares · Meron Negash)
+
+            | | Download | Formate |
+            |---|---|---|
+            | 🪟 Windows 10/11 (x64) | `UBTune-Windows-Setup.exe` | VST3 + Standalone, mit Deinstaller |
+            | 🍎 macOS 10.13+ (Apple Silicon + Intel) | `UBTune-macOS.dmg` | VST3 + AU + Standalone, mit Deinstaller |
+
+            Modi: **SMOOTH** (natürlich, Real-Time) · **PRO** (klassisch tight) · **T-PAIN** (Robot, Hard-Snap) — Skalen inkl. **Pentatonik Dur/Moll**, Key-Detect, Formant, Humanize.
+
+            Infos & Anleitung: https://ubtune.uniquebaby.de

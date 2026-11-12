@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>UBTune __VERSION__</title>
+    <organization>de.uniquebaby</organization>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="vst3"/>
+        <line choice="au"/>
+        <line choice="app"/>
+    </choices-outline>
+    <choice id="vst3" title="VST3-Plugin" description="Für Ableton Live, FL Studio, Cubase, Studio One, Reaper, Bitwig …">
+        <pkg-ref id="de.uniquebaby.ubtune.vst3"/>
+    </choice>
+    <choice id="au" title="Audio Unit (AU)" description="Für Logic Pro, GarageBand, Ableton Live, Reaper …">
+        <pkg-ref id="de.uniquebaby.ubtune.au"/>
+    </choice>
+    <choice id="app" title="UBTune App" description="Standalone-App: live mit Mikrofon tunen.">
+        <pkg-ref id="de.uniquebaby.ubtune.app"/>
+    </choice>
+    <pkg-ref id="de.uniquebaby.ubtune.vst3" version="__VERSION__">UBTune-VST3.pkg</pkg-ref>
+    <pkg-ref id="de.uniquebaby.ubtune.au" version="__VERSION__">UBTune-AU.pkg</pkg-ref>
+    <pkg-ref id="de.uniquebaby.ubtune.app" version="__VERSION__">UBTune-App.pkg</pkg-ref>
+</installer-gui-script>

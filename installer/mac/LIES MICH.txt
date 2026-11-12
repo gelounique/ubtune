@@ -1,0 +1,18 @@
+UBTune — by unique & Mbezza (Gelo Santino Mares · Meron Negash)
+https://ubtune.uniquebaby.de
+
+INSTALLIEREN
+1. „UBTune Installer.pkg“ mit RECHTSKLICK › „Öffnen“ starten
+   (macOS warnt, weil der Installer nicht über den App Store kommt).
+   Falls blockiert: Systemeinstellungen › Datenschutz & Sicherheit › „Trotzdem öffnen“.
+2. Durchklicken – unter „Anpassen“ kannst du VST3 / AU / App einzeln wählen.
+3. DAW neu starten bzw. Plugins neu scannen.
+
+WO FINDE ICH UBTUNE?
+- Logic Pro / GarageBand: Audio-FX › Audio Units › UNIQUEBABY › UBTune
+- Ableton Live: Plug-Ins › VST3 (oder AU) › UNIQUEBABY › UBTune
+- FL Studio, Cubase, Studio One, Reaper, Bitwig: VST3 › UNIQUEBABY › UBTune
+- Standalone: Programme › UBTune (Mikrofon erlauben)
+
+DEINSTALLIEREN
+„UBTune deinstallieren.command“ doppelklicken (bzw. Rechtsklick › Öffnen).
