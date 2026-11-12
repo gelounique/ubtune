@@ -1,5 +1,5 @@
 # UBTune — builds, validates and packages the plugin for Windows + macOS.
-# Push a tag "v1.2.3" to publish a GitHub release with both installers.
+# Every green build on main publishes/updates the GitHub release v<project version> with both installers.
 name: Build UBTune
 on:
   push:
@@ -87,17 +87,24 @@ jobs:
 
   release:
     needs: [windows, macos]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: v
+        run: echo "ver=$(sed -nE 's/^project\(UBTune VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true, pattern: "UBTune-*" }
       - uses: softprops/action-gh-release@v2
         with:
-          name: UBTune ${{ github.ref_name }}
+          tag_name: v${{ steps.v.outputs.ver }}
+          target_commitish: ${{ github.sha }}
+          name: UBTune ${{ steps.v.outputs.ver }}
+          make_latest: "true"
           files: dist/*
           body: |
-            **UBTune ${{ github.ref_name }}** — Realtime Pitch Correction by **unique & Mbezza** (Gelo Santino Mares · Meron Negash)
+            **UBTune ${{ steps.v.outputs.ver }}** — Realtime Pitch Correction by **unique & Mbezza** (Gelo Santino Mares · Meron Negash)
 
             | | Download | Formate |
             |---|---|---|
@@ -105,5 +112,6 @@ jobs:
             | 🍎 macOS 10.13+ (Apple Silicon + Intel) | `UBTune-macOS.dmg` | VST3 + AU + Standalone, mit Deinstaller |
 
             Modi: **SMOOTH** (natürlich, Real-Time) · **PRO** (klassisch tight) · **T-PAIN** (Robot, Hard-Snap) — Skalen inkl. **Pentatonik Dur/Moll**, Key-Detect, Formant, Humanize.
+            Geprüft mit pluginval (Strictness 7) und auval.
 
-            Infos & Anleitung: https://ubtune.uniquebaby.de
+            Infos, Live-Demo & Anleitung: https://ubtune.uniquebaby.de
