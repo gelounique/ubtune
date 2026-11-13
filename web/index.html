@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>UBTune by unique &amp; Mbezza – Realtime Autotune für jede DAW (Windows &amp; Mac)</title>
-<meta name="description" content="UBTune: Realtime-Pitch-Correction von unique &amp; Mbezza. Drei Modi von smooth bis T-Pain-Robot, Pentatonik-Skalen, Key-Detect, animiertes Piano. VST3, AU &amp; Standalone für Windows und Mac – live im Browser testen.">
-<meta name="theme-color" content="#07050b">
-<meta property="og:title" content="UBTune – Realtime Autotune by unique &amp; Mbezza">
-<meta property="og:description" content="Smooth · Pro · T-Pain. VST3, AU &amp; Standalone für Windows und Mac. Jetzt live im Browser ausprobieren.">
+<title>UBTune by unique &amp; Mbezza – Low-Latency Autotune für jede DAW (Windows &amp; Mac)</title>
+<meta name="description" content="UBTune: Realtime-Pitch-Correction von unique &amp; Mbezza mit ~3 ms Latenz. Smooth, Pro und Robotic, Pentatonik-Skalen, Detect Key, Shockwave-Orb. VST3, AU &amp; Standalone für Windows und Mac – live im Browser testen.">
+<meta name="theme-color" content="#050506">
+<meta property="og:title" content="UBTune – Low-Latency Autotune by unique &amp; Mbezza">
+<meta property="og:description" content="Smooth · Pro · Robotic. ~3 ms Latenz. VST3, AU &amp; Standalone für Windows und Mac. Jetzt live im Browser ausprobieren.">
 <meta property="og:image" content="https://ubtune.uniquebaby.de/assets/og.jpg">
 <meta property="og:url" content="https://ubtune.uniquebaby.de/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/icon-64.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/site.css">
+<link rel="stylesheet" href="css/site.css?v=110">
 </head>
 <body>
 
@@ -25,27 +25,33 @@
   <nav class="links">
     <a href="#demo">Live-Demo</a><a href="#modi">Modi</a><a href="#plugin">Plugin</a><a href="#features">Features</a><a href="#download">Download</a>
   </nav>
-  <a class="btn pill sm" href="#download">Download</a>
+  <a class="btn primary sm" href="#download">Download</a>
 </header>
 
 <main id="top">
 
-<!-- HERO -->
 <section class="hero" id="hero">
-  <canvas id="heroRing" aria-hidden="true"></canvas>
-  <div class="hero-in">
-    <div class="eyebrow reveal">UBTUNE BY UNIQUE &amp; MBEZZA</div>
-    <h1 class="reveal">Jede Note.<br><span class="grad">Genau da, wo sie hingehört.</span></h1>
-    <p class="lead reveal">Realtime-Autotune für jede DAW – von unsichtbar smooth bis maximal Robot. VST3, AU &amp; Standalone für Windows &amp; Mac.</p>
+  <div class="hero-txt">
+    <div class="eyebrow reveal">UBTUNE 1.1 · BY UNIQUE &amp; MBEZZA</div>
+    <h1 class="reveal">Jede Note.<br><span class="silver">Ohne Verzögerung.</span></h1>
+    <p class="lead reveal">Realtime-Autotune für jede DAW – von unsichtbar smooth bis voll Robotic. Rund 3&nbsp;ms Latenz, Live-Monitoring ohne Umweg. VST3, AU &amp; Standalone für Windows &amp; Mac.</p>
     <div class="cta reveal">
-      <a class="btn pill glow" href="#demo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12Z" fill="currentColor"/></svg>Live mit deinem Mikro testen</a>
+      <a class="btn primary" href="#demo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12Z" fill="currentColor"/></svg>Live mit deinem Mikro testen</a>
       <a class="btn ghost" href="#download">Download Windows &amp; Mac</a>
     </div>
+    <div class="stats reveal">
+      <div><b>~3 ms</b><span>LATENZ</span></div>
+      <div><b>3</b><span>MODI</span></div>
+      <div><b>0,4 ¢</b><span>ROBOTIC-GENAUIGKEIT</span></div>
+    </div>
   </div>
-  <canvas id="heroPiano" class="hero-piano" aria-hidden="true"></canvas>
+  <div class="hero-vis">
+    <canvas id="heroOrb" aria-hidden="true"></canvas>
+    <canvas id="heroKeys" aria-hidden="true"></canvas>
+  </div>
 </section>
 
-<div class="marquee" aria-label="Unterstützte DAWs"><div class="mq-track" id="mq">
+<div class="marquee" aria-label="Unterstützte DAWs"><div class="mq-track">
   <span>FL Studio</span><span>Ableton Live</span><span>Logic Pro</span><span>Cubase</span><span>Studio One</span><span>Reaper</span><span>Bitwig</span><span>GarageBand</span><span>Reason</span><span>Nuendo</span>
 </div></div>
 
@@ -55,39 +61,39 @@
     <div class="head reveal">
       <div class="eyebrow">LIVE-DEMO</div>
       <h2>Sing rein. Hör’s sofort.</h2>
-      <p>Dieselbe Engine wie im Plugin – direkt im Browser. Nichts wird hochgeladen, alles läuft auf deinem Gerät. <b>Kopfhörer auf</b>, sonst gibt’s Feedback.</p>
+      <p>Dieselbe Engine wie im Plugin – direkt im Browser, nichts wird hochgeladen. <b>Kopfhörer auf</b>, sonst gibt’s Feedback.</p>
     </div>
     <div class="demo reveal">
       <div class="demo-stage panel">
-        <canvas id="demoRing"></canvas>
-        <canvas id="demoPiano" class="demo-piano"></canvas>
+        <canvas id="demoOrb"></canvas>
+        <div class="demo-keys">
+          <div class="keypanel">
+            <div class="sel big" id="keySel"><button data-d="-1" aria-label="Key zurück">◀</button><div class="v"><i>KEY</i><b>A</b></div><button data-d="1" aria-label="Key vor">▶</button></div>
+            <div class="sel" id="scaleSel"><button data-d="-1" aria-label="Scale zurück">◀</button><div class="v"><i>SCALE</i><b>PENT. MINOR</b></div><button data-d="1" aria-label="Scale vor">▶</button></div>
+          </div>
+          <canvas id="demoKeys"></canvas>
+        </div>
         <div class="demo-read" id="demoRead">— bereit —</div>
       </div>
       <div class="demo-ctrl panel">
         <div class="row2">
-          <button class="btn pill glow wide" id="micBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12Z" fill="currentColor"/></svg><span>Mikro starten</span></button>
+          <button class="btn primary wide" id="micBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12Z" fill="currentColor"/></svg><span>Mikro starten</span></button>
           <button class="btn ghost wide" id="voxBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg><span>Beispiel-Stimme</span></button>
         </div>
-        <div class="ab" role="group" aria-label="Vergleich">
-          <button data-ab="0">ORIGINAL</button><button data-ab="1" class="on">UBTUNE</button>
-        </div>
+        <div class="ab" role="group" aria-label="Vergleich"><button data-ab="0">ORIGINAL</button><button data-ab="1" class="on">UBTUNE</button></div>
         <div class="lbl">MODUS</div>
-        <div class="seg" id="modeSeg">
-          <button data-mode="0"><b>SMOOTH</b><i>natürlich</i></button>
-          <button data-mode="1" class="on"><b>PRO</b><i>tight</i></button>
-          <button data-mode="2" class="hot"><b>T-PAIN</b><i>robot</i></button>
-        </div>
-        <div class="lbl">KEY <button class="mini" id="detectBtn">DETECT KEY</button></div>
-        <div class="keys" id="keyGrid"></div>
-        <div class="lbl">SKALA</div>
-        <div class="scales" id="scaleGrid"></div>
-        <div class="sliders">
-          <label>RETUNE <output id="o-retune">20 ms</output><input type="range" id="s-retune" min="0" max="200" step="1" value="20"></label>
-          <label>HUMANIZE <output id="o-humanize">25 %</output><input type="range" id="s-humanize" min="0" max="100" step="1" value="25"></label>
+        <div class="seg" id="modeSeg"><button data-mode="0">SMOOTH</button><button data-mode="1" class="on">PRO</button><button data-mode="2">ROBOTIC</button></div>
+        <button class="detect" id="detectBtn"><span class="bar" id="detectBar"></span>
+          <svg class="waves" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="4" fill="currentColor"/><path d="M11 11a10 10 0 0 0 0 14M25 11a10 10 0 0 1 0 14M7 7a15.5 15.5 0 0 0 0 22M29 7a15.5 15.5 0 0 1 0 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span style="position:relative"><b id="detectTitle">DETECT KEY</b><i id="detectSub">8 SEK SINGEN · SETZT KEY + SCALE</i></span></button>
+        <div class="lbl">REGLER</div>
+        <div class="knobs">
+          <label class="big">RETUNE SPEED <output id="o-retune">20 ms</output><input type="range" id="s-retune" min="0" max="200" step="1" value="20"></label>
+          <label class="big" style="font-size:11px">HUMANIZE <output id="o-humanize">25 %</output><input type="range" id="s-humanize" min="0" max="100" step="1" value="25"></label>
           <label>FORMANT <output id="o-formant">0.0 st</output><input type="range" id="s-formant" min="-6" max="6" step="0.1" value="0"></label>
           <label>MIX <output id="o-mix">100 %</output><input type="range" id="s-mix" min="0" max="100" step="1" value="100"></label>
         </div>
-        <p class="fine" id="demoNote">Tipp: T-PAIN + Pentatonic Minor und über die Noten rutschen. 🤖</p>
+        <p class="fine" id="demoNote">Tipp: ROBOTIC + Pentatonic Minor und über die Noten rutschen. 🤖</p>
       </div>
     </div>
   </div>
@@ -99,7 +105,7 @@
     <div class="head reveal">
       <div class="eyebrow">DREI MODI</div>
       <h2>Von „hört keiner“ bis „hört jeder“.</h2>
-      <p>Ein Klick setzt Retune-Speed und Humanize – danach kannst du alles feintunen.</p>
+      <p>Ein Klick setzt Retune Speed und Humanize – danach alles frei feintunen.</p>
     </div>
     <div class="modes">
       <article class="mode panel reveal">
@@ -111,13 +117,13 @@
       <article class="mode panel reveal">
         <div class="mode-top"><span class="tag">02</span><h3>PRO</h3><span class="mono dim">CLASSIC · TIGHT</span></div>
         <canvas class="curve" data-mode="1"></canvas>
-        <p>Der moderne Rap/Pop-Standard: tight auf der Note, aber noch menschlich. Kurze Retune-Zeit, etwas Humanize – der klassische Pro-Sound.</p>
+        <p>Der moderne Rap/Pop-Standard: tight auf der Note, aber noch menschlich. Kurze Retune-Zeit, etwas Humanize.</p>
         <div class="kv"><span>Retune <b>20 ms</b></span><span>Humanize <b>25 %</b></span></div>
       </article>
-      <article class="mode panel hot reveal">
-        <div class="mode-top"><span class="tag">03</span><h3>T-PAIN</h3><span class="mono dim">ROBOT · HARD SNAP</span></div>
+      <article class="mode panel reveal">
+        <div class="mode-top"><span class="tag">03</span><h3>ROBOTIC</h3><span class="mono dim">HARD SNAP · T-PAIN VIBE</span></div>
         <canvas class="curve" data-mode="2"></canvas>
-        <p>Maximal robotisch, MetaTune-Vibe: 0 ms Retune, harte Notensprünge – und UBTune schaltet automatisch auf <b>Pentatonic Minor/Major</b>.</p>
+        <p>Maximal robotisch, MetaTune-Vibe: 0 ms Retune, harte Notensprünge – UBTune schaltet automatisch auf <b>Pentatonic Minor/Major</b>.</p>
         <div class="kv"><span>Retune <b>0 ms</b></span><span>Skala <b>Pentatonik</b></span></div>
       </article>
     </div>
@@ -129,17 +135,17 @@
   <div class="wrap">
     <div class="head reveal">
       <div class="eyebrow">DAS PLUGIN</div>
-      <h2>Lila Vibe. Null Ablenkung.</h2>
-      <p>In der Mitte der Partikel-Ring mit deiner Tonart, unten das Piano, das live zeigt, welche Note du singst – und wohin UBTune sie zieht.</p>
+      <h2>Schwarz. Weiß. Ein Orb.</h2>
+      <p>Links der zerfallende Partikel-Orb mit Shockwaves bei jedem Notenwechsel, rechts die Regler, unten Heatmaps und eine Oktave zum Anklicken.</p>
     </div>
     <div class="shot-tabs reveal" role="tablist">
-      <button class="on" data-shot="pro">PRO · A Pent. Minor</button><button data-shot="tpain">T-PAIN</button><button data-shot="smooth">SMOOTH · C Major</button>
+      <button class="on" data-shot="pro">PRO</button><button data-shot="robotic">ROBOTIC</button><button data-shot="smooth">SMOOTH</button>
     </div>
-    <figure class="shot reveal"><img id="shotImg" src="assets/shot-pro.jpg" alt="UBTune Plugin-Oberfläche mit lila Partikel-Ring, Key A, Pentatonic Minor und Piano" width="2000" height="1320" loading="lazy"></figure>
+    <figure class="shot reveal"><img id="shotImg" src="assets/shot-pro.jpg" alt="UBTune Plugin-Oberfläche: Shockwave-Orb mit Key A, Regler für Retune Speed, Humanize, Formant, Mix und Oktav-Keyboard" width="2000" height="1400" loading="lazy"></figure>
     <div class="anno reveal">
-      <div><b>01 · Partikel-Ring</b><span>Key + Skala in der Mitte, 12-Ton-Rad außen, ein Komet zeigt deine gesungene Tonhöhe.</span></div>
-      <div><b>02 · Piano</b><span>Gesungene Note leuchtet lila, die Ziel-Note magenta. Tasten anklicken = eigene Skala.</span></div>
-      <div><b>03 · Controls</b><span>Retune, Humanize, Formant, Mix, Transpose, Output – Doppelklick setzt zurück.</span></div>
+      <div><b>01 · ORB</b><span>Key + Scale in der Mitte. Ein Funke zeigt deine Tonhöhe, jeder Notenwechsel löst eine Shockwave aus.</span></div>
+      <div><b>02 · REGLER</b><span>Retune Speed groß, Humanize mittel, Formant und Mix klein – Doppelklick setzt zurück.</span></div>
+      <div><b>03 · KEYS</b><span>Input/Output-Heatmaps, eine Oktave zum An- und Abwählen, großer Detect-Key-Button.</span></div>
     </div>
   </div>
 </section>
@@ -152,13 +158,12 @@
       <h2>Alles, was ein Tune braucht.</h2>
     </div>
     <div class="bento">
-      <div class="card panel big reveal"><div class="ico">♪</div><h3>Pentatonik first</h3><p>Pentatonic Minor &amp; Major direkt in der Skalen-Auswahl – dazu Major, Minor, Blues, Harmonic Minor, Dorian, Chromatic und Custom. Weniger Töne = härtere, catchigere Sprünge.</p><div class="pills"><span>PENT. MINOR</span><span>PENT. MAJOR</span><span>BLUES</span><span>DORIAN</span><span>CUSTOM</span></div></div>
-      <div class="card panel reveal"><div class="ico">◎</div><h3>Detect Key</h3><p>8 Sekunden singen – UBTune erkennt Tonart und Dur/Moll und stellt sie ein.</p></div>
-      <div class="card panel reveal"><div class="ico">⌁</div><h3>Formant</h3><p>±6 Halbtöne Klangfarbe, unabhängig von der Tonhöhe. Pitch bleibt, Stimme wird größer oder kleiner.</p></div>
+      <div class="card panel big reveal"><div class="big-num silver">~3 ms</div><h3>Low Latency. Immer.</h3><p>UBTune schneidet jede Periode aus dem, was du gerade gesungen hast – kein Puffer, kein Umschalten. Echte Verzögerung 1–5 ms, ab der ersten Sekunde. Direkt in der DAW einsingen, ohne dass es nachhängt.</p></div>
+      <div class="card panel reveal"><div class="ico">♪</div><h3>Pentatonik first</h3><p>Pentatonic Minor &amp; Major, dazu Major, Minor, Blues, Harmonic Minor, Dorian, Chromatic und Custom.</p></div>
+      <div class="card panel reveal"><div class="ico">◎</div><h3>Detect Key</h3><p>Großer Button, 8 Sekunden singen – Tonart und Dur/Moll sind gesetzt.</p></div>
+      <div class="card panel reveal"><div class="ico">⌁</div><h3>Formant</h3><p>±6 Halbtöne Klangfarbe, unabhängig von der Tonhöhe.</p></div>
       <div class="card panel reveal"><div class="ico">∿</div><h3>Humanize</h3><p>Hält dein natürliches Vibrato, während die Note gerade gezogen wird.</p></div>
-      <div class="card panel reveal"><div class="ico">⇅</div><h3>Transpose</h3><p>±12 Halbtöne – für Oktav-Doubles, Ad-libs und Chipmunk-Momente.</p></div>
-      <div class="card panel wide reveal"><div class="ico">⏱</div><h3>Latenz-kompensiert</h3><p>UBTune meldet seine Latenz (~34 ms) an die DAW – beim Mixen sitzt alles automatisch auf dem Grid. Für Live-Aufnahmen: Standalone-App oder Low-Latency-Monitoring deiner DAW.</p></div>
-      <div class="card panel reveal"><div class="ico">⊞</div><h3>Jede DAW</h3><p>VST3 auf Windows &amp; Mac, AU für Logic &amp; GarageBand, plus Standalone-App.</p></div>
+      <div class="card panel wide reveal"><div class="ico">⊞</div><h3>Jede DAW</h3><p>VST3 auf Windows &amp; Mac, AU für Logic &amp; GarageBand, plus Standalone-App. Jeder Build wird automatisch installiert, mit pluginval &amp; auval geprüft und wieder deinstalliert.</p><div class="pills"><span>VST3</span><span>AU</span><span>STANDALONE</span><span>UNIVERSAL</span></div></div>
     </div>
   </div>
 </section>
@@ -167,7 +172,7 @@
 <section class="sec" id="download">
   <div class="wrap">
     <div class="head reveal">
-      <div class="eyebrow">DOWNLOAD · VERSION <span class="ver">1.0.0</span></div>
+      <div class="eyebrow">DOWNLOAD · VERSION <span class="ver">1.1.0</span></div>
       <h2>Holen. Installieren. Tunen.</h2>
       <p>Installer + Deinstaller für beide Systeme. Danach DAW neu starten – UBTune liegt unter <b>UNIQUEBABY</b>.</p>
     </div>
@@ -175,13 +180,13 @@
       <div class="dl-card panel reveal">
         <div class="os"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10 4.5v7H3zm8-1.15L21 3v8.5H11zM3 12.5h7v7l-7-1zm8 0h10V21l-10-1.4z" fill="currentColor"/></svg><div><h3>Windows</h3><span class="mono dim">10 / 11 · 64-BIT</span></div></div>
         <ul><li>VST3 → <code>Common Files\VST3</code></li><li>Standalone-App + Startmenü</li><li>Deinstaller unter „Apps“</li></ul>
-        <a class="btn pill glow wide" href="https://github.com/gelounique/ubtune/releases/latest/download/UBTune-Windows-Setup.exe">UBTune-Windows-Setup.exe</a>
+        <a class="btn primary wide" href="https://github.com/gelounique/ubtune/releases/latest/download/UBTune-Windows-Setup.exe">UBTune-Windows-Setup.exe</a>
         <p class="fine">SmartScreen-Hinweis? „Weitere Informationen“ › „Trotzdem ausführen“.</p>
       </div>
       <div class="dl-card panel reveal">
         <div class="os"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7a4.6 4.6 0 0 0-3.6-2c-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.9a4.8 4.8 0 0 0-4 2.5c-1.8 3-.5 7.5 1.2 9.9.8 1.2 1.8 2.5 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8 2.2-1.2 3-2.4a10 10 0 0 0 1.4-2.8 4.3 4.3 0 0 1-2.7-4ZM14 5.2a4.4 4.4 0 0 0 1-3.2 4.5 4.5 0 0 0-3 1.5 4.2 4.2 0 0 0-1 3.1A3.7 3.7 0 0 0 14 5.2Z" fill="currentColor"/></svg><div><h3>macOS</h3><span class="mono dim">10.13+ · APPLE SILICON &amp; INTEL</span></div></div>
         <ul><li>VST3 + Audio Unit (Logic, GarageBand)</li><li>Standalone-App</li><li>Deinstaller im DMG</li></ul>
-        <a class="btn pill glow wide" href="https://github.com/gelounique/ubtune/releases/latest/download/UBTune-macOS.dmg">UBTune-macOS.dmg</a>
+        <a class="btn primary wide" href="https://github.com/gelounique/ubtune/releases/latest/download/UBTune-macOS.dmg">UBTune-macOS.dmg</a>
         <p class="fine">Installer per <b>Rechtsklick › Öffnen</b> starten (nicht notarisiert).</p>
       </div>
     </div>
@@ -194,10 +199,9 @@
   </div>
 </section>
 
-<!-- CREDITS -->
 <section class="sec credits" id="credits">
   <div class="wrap narrow">
-    <div class="panel glowbox reveal cr">
+    <div class="panel reveal cr">
       <img src="assets/icon-256.png" alt="UBTune Icon" width="112" height="112">
       <div class="eyebrow">ENTWICKELT VON</div>
       <h2>unique &amp; Mbezza</h2>
@@ -216,7 +220,7 @@
   </div>
 </footer>
 
-<script src="js/visuals.js"></script>
-<script src="js/site.js"></script>
+<script src="js/visuals.js?v=110"></script>
+<script src="js/site.js?v=110"></script>
 </body>
 </html>
