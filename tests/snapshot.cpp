@@ -11,22 +11,23 @@ int main (int argc, char** argv)
 
     UBTuneProcessor proc;
     proc.prepareToPlay (48000.0, 512);
-    if (scene == "tpain") proc.applyModePreset (2);
+    if (scene == "robotic") proc.applyModePreset (2);
     if (scene == "smooth") { proc.applyModePreset (0); proc.setParam (ids::key, 0); proc.setParam (ids::scale, ubt::Major); }
 
     std::unique_ptr<UBTuneEditor> ed (dynamic_cast<UBTuneEditor*> (proc.createEditor()));
     ed->setSize (UBTuneMain::W, UBTuneMain::H);
     auto& m = ed->getMain();
-    const float sung = scene == "tpain" ? 64.3f : scene == "smooth" ? 67.2f : 57.25f;
+    const float sung = scene == "robotic" ? 64.3f : scene == "smooth" ? 67.2f : 57.25f;
     proc.engine.tLevel = 0.07f;
+    proc.engine.tDelayMs = 2.7f;
     for (int i = 0; i < 90; ++i)
     {
         proc.engine.tInputMidi = sung + 0.18f * std::sin (i * 0.21f);
-        proc.engine.tTargetNote = scene == "tpain" ? 64 : scene == "smooth" ? 67 : 57;
+        proc.engine.tTargetNote = scene == "robotic" ? 64 : scene == "smooth" ? 67 : 57;
         proc.engine.tCorrection = -0.25f;
         m.tick (1.0f / 60.0f);
     }
-    if (scene == "credits") { juce::MouseEvent* none = nullptr; (void) none; for (auto* c : m.getChildren()) if (dynamic_cast<CreditsPanel*> (c)) c->setVisible (true); }
+    if (scene == "credits") m.showCredits (true);
 
     auto img = m.createComponentSnapshot (m.getLocalBounds(), true, scale);
     juce::File f (out); f.deleteFile();

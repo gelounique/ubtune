@@ -2,8 +2,10 @@
 // by unique & Mbezza (Gelo Santino Mares · Meron Negash) — UNIQUEBABY
 //
 // Pure C++17, no framework dependency (used by the JUCE plugin and the offline tests).
-//  - Pitch detection: YIN on a decimated (~11-12 kHz) mono signal + full-rate refinement
-//  - Pitch shifting:  pitch-synchronous overlap-add (TD-PSOLA) with formant control
+//  - Pitch detection: YIN on the most recent ~26 ms (decimated to ~11-12 kHz) + full-rate refinement
+//  - Pitch shifting:  low-latency TD-PSOLA. Every grain is evaluated lazily at output time and is
+//                     cut from the most recent *already sung* pitch period, so the audio delay is only
+//                     a fraction of one period (~1-6 ms) instead of a fixed worst-case buffer.
 //  - Note logic:      scale masks (incl. Pentatonic Major/Minor), hysteresis, retune speed,
 //                     humanize (keeps vibrato), three characters: SMOOTH / PRO / T-PAIN
 #pragma once
@@ -20,7 +22,7 @@ namespace ubt
 
 static constexpr double kPi = 3.14159265358979323846;
 
-enum class Mode : int { Smooth = 0, Pro = 1, TPain = 2 };
+enum class Mode : int { Smooth = 0, Pro = 1, Robotic = 2 };
 
 enum Scale : int
 {
@@ -82,14 +84,16 @@ struct Params
 class Engine
 {
 public:
-    static constexpr double kMinF = 75.0, kMaxF = 1050.0;
+    static constexpr double kMinF = 70.0, kMaxF = 1100.0;
     static constexpr float  kFormantRange = 6.0f;
+    static constexpr double kReportedLatencyMs = 2.0;   // what we tell the host (typical real delay ~1-5 ms)
 
     // ---------- telemetry for the UI (written on audio thread) ----------
     std::atomic<float> tInputMidi  { -1.0f };   // detected sung pitch (fractional MIDI), -1 = none
     std::atomic<int>   tTargetNote { -1 };      // note we tune to
     std::atomic<float> tCorrection { 0.0f };    // applied shift in semitones
     std::atomic<float> tLevel      { 0.0f };    // input RMS
+    std::atomic<float> tDelayMs    { 0.0f };    // current real audio delay of the tuned signal
     std::atomic<float> tDetectProgress { -1.0f }; // -1 idle, 0..1 listening
     std::atomic<int>   tDetectedKey { -1 };     // root pc (0..11) after detection
     std::atomic<int>   tDetectedMinor { 0 };
@@ -104,33 +108,24 @@ public:
         fsd = fs / D;
         tauMaxD = (int) std::ceil (fsd / kMinF) + 2;
         tauMinD = std::max (2, (int) std::floor (fsd / kMaxF));
-        winD = 2 * tauMaxD;
-        hopD = std::max (8, (int) std::round (0.0053 * fsd)); // ~5.3 ms
-        hopFull = hopD * D;
-
+        winD = tauMaxD + 8;
+        hopD = std::max (8, (int) std::round (0.0027 * fsd)); // ~2.7 ms analysis hop
         Pmax = fs / kMinF;
-        Punv = std::round (0.0045 * fs);
-        refineWin = std::min ((int) (0.022 * fs), 4096);
+        Punv = std::round (0.004 * fs);
+        refineWin = std::min ((int) (0.016 * fs), 4096);
+        latency = std::max (1, (int) std::lround (kReportedLatencyMs * 0.001 * fs));
 
-        // analysis window centre lies (winD+tauMaxD)/2 decimated samples behind "now"
-        centerDelay = (int) std::ceil ((winD + tauMaxD) * 0.5 * D) + D * 4;
-        const double fFmin = std::pow (2.0, -kFormantRange / 12.0);
-        latency = (int) std::ceil (Pmax * (1.0 + 1.0 / fFmin)) + 64;
-        latency = std::max (latency, centerDelay + 2 * hopFull + 64);
-
-        int need = 4 * latency + (int) (8 * Pmax) + refineWin + 8192;
+        int need = (int) (16 * Pmax) + refineWin + 8192;
         ringSize = 1; while (ringSize < need) ringSize <<= 1;
         ringMask = ringSize - 1;
-
         in.assign ((size_t) nch, std::vector<float> ((size_t) ringSize, 0.0f));
-        out.assign ((size_t) nch, std::vector<float> ((size_t) ringSize, 0.0f));
         mono.assign ((size_t) ringSize, 0.0f);
 
         decSize = 1; while (decSize < 4 * (winD + tauMaxD) + 64) decSize <<= 1;
         dec.assign ((size_t) decSize, 0.0f);
 
         // anti-alias low-pass for decimation (windowed sinc)
-        const int taps = 8 * D + 1;
+        const int taps = 6 * D + 1;
         fir.assign ((size_t) taps, 0.0f);
         const double fc = 0.5 / D * 0.8;
         double sum = 0;
@@ -145,6 +140,8 @@ public:
 
         diff.assign ((size_t) tauMaxD + 2, 0.0f);
         cmnd.assign ((size_t) tauMaxD + 2, 0.0f);
+        aLvl = 1.0 - std::exp (-1.0 / (0.08 * fs));
+        aComp = 1.0 - std::exp (-1.0 / (0.05 * fs));
         reset();
     }
 
@@ -152,17 +149,16 @@ public:
 
     void reset()
     {
-        for (auto& c : in)  std::fill (c.begin(), c.end(), 0.0f);
-        for (auto& c : out) std::fill (c.begin(), c.end(), 0.0f);
+        for (auto& c : in) std::fill (c.begin(), c.end(), 0.0f);
         std::fill (mono.begin(), mono.end(), 0.0f);
         std::fill (dec.begin(), dec.end(), 0.0f);
         n = 0; decN = 0;
-        for (auto& f : raw)  f = Frame{};
-        for (auto& f : filt) f = Frame{};
-        latestRaw = -1; latestFilt = -1;
-        nextMark = 0.0; inMark = 0.0; wasVoiced = false; polarity = 1.0f;
-        curNote = -1; shift = 0.0; center = 0.0; voicedRun = 0; unvoicedRun = 0;
-        tInputMidi = -1.0f; tTargetNote = -1; tCorrection = 0.0f; tLevel = 0.0f;
+        raw[0] = raw[1] = raw[2] = Frame{}; nRaw = 0;
+        cur = Frame{};
+        numGrains = 0;
+        nextMark = 0.0; lastMark = 0.0; markValid = false; wasVoiced = false; polarity = 1.0f; lastHop = 200.0;
+        curNote = -1; shift = 0.0; center = 0.0; delaySm = 0.0; eIn = eOut = 0.0; comp = 1.0;
+        tInputMidi = -1.0f; tTargetNote = -1; tCorrection = 0.0f; tLevel = 0.0f; tDelayMs = 0.0f;
     }
 
     void setParams (const Params& p) { prm = p; if (prm.mask == 0) prm.mask = 0x0FFF; }
@@ -186,14 +182,13 @@ public:
 
         for (int i = 0; i < numSamples; ++i)
         {
-            const int w = (int) (n & ringMask);
+            const size_t w = (size_t) (n & ringMask);
             float m = 0.0f;
-            for (int c = 0; c < C; ++c) { in[(size_t) c][(size_t) w] = ch[c][i]; m += ch[c][i]; }
+            for (int c = 0; c < C; ++c) { in[(size_t) c][w] = ch[c][i]; m += ch[c][i]; }
             m /= (float) C;
-            mono[(size_t) w] = m;
+            mono[w] = m;
             lvl += (double) m * m;
 
-            // ---- decimate + analysis ----
             if ((n % D) == 0)
             {
                 const int taps = (int) fir.size();
@@ -204,27 +199,64 @@ public:
                 if ((decN % hopD) == 0 && decN >= winD + tauMaxD) analyse();
             }
 
-            // ---- synthesis: add every grain that starts at or before this sample ----
-            synthesise (C, fF);
+            trackMarks();
+            spawnGrains (fF);
 
-            const int r = (int) (n & ringMask);
-            const int d = (int) ((n - latency) & ringMask);
+            // ---- render all active grains for this output sample ----
+            float y[8] = {};
+            const double t = (double) n;
+            for (int g = 0; g < numGrains;)
+            {
+                Grain& gr = grains[g];
+                const double u = (t - gr.dst) * gr.invH;
+                if (u >= 1.0) { grains[g] = grains[--numGrains]; continue; }
+                if (u > -1.0)
+                {
+                    const float wv = (float) ((0.5 + 0.5 * std::cos (kPi * u)) * gr.gain);
+                    const double sp = gr.src + (t - gr.dst) * gr.fF;
+                    const double fl = std::floor (sp);
+                    const float fr = (float) (sp - fl);
+                    const int64_t i0 = (int64_t) fl;
+                    const size_t a = (size_t) (i0 & ringMask), b = (size_t) ((i0 + 1) & ringMask);
+                    for (int c = 0; c < C; ++c)
+                    {
+                        const auto& x = in[(size_t) c];
+                        y[c] += (x[a] + (x[b] - x[a]) * fr) * wv;
+                    }
+                }
+                ++g;
+            }
+
+            // ---- level match: overlapping grains at big shifts partly cancel -> keep loudness = input ----
+            {
+                double yo = 0.0; for (int c = 0; c < C; ++c) yo += y[c];
+                yo /= C;
+                eIn += ((double) m * m - eIn) * aLvl;
+                eOut += (yo * yo - eOut) * aLvl;
+                const double target = (eIn > 1e-7 && eOut > 1e-9) ? std::clamp (std::sqrt (eIn / eOut), 0.5, 8.0) : comp;
+                comp += (target - comp) * aComp;
+            }
+            const size_t d = (size_t) ((n - latency) & ringMask);
             for (int c = 0; c < C; ++c)
             {
-                const float wet = out[(size_t) c][(size_t) r];
-                out[(size_t) c][(size_t) r] = 0.0f;
-                const float dry = in[(size_t) c][(size_t) d];
+                const float dry = in[(size_t) c][d];
+                const float wet = y[c] * (float) comp;
                 ch[c][i] = (dry + (wet - dry) * mix) * prm.outGain;
             }
             ++n;
         }
-        if (numSamples > 0) tLevel = (float) std::sqrt (lvl / numSamples);
+        if (numSamples > 0)
+        {
+            tLevel = (float) std::sqrt (lvl / numSamples);
+            tDelayMs = (float) (delaySm * 1000.0 / fs);
+        }
     }
 
 private:
-    struct Frame { double period = 0.0; bool voiced = false; float rms = 0.0f; int64_t center = 0; };
+    struct Frame { double period = 0.0; bool voiced = false; float rms = 0.0f; };
+    struct Grain { double src, dst, invH, fF, gain; };
 
-    // ---------------- analysis ----------------
+    // ---------------- analysis (always on the most recent window) ----------------
     void analyse()
     {
         const int len = winD + tauMaxD;
@@ -235,10 +267,9 @@ private:
         for (int j = 0; j < len; ++j) e += (double) X (j) * X (j);
         const float rms = (float) std::sqrt (e / len);
 
-        Frame f; f.rms = rms; f.center = n - centerDelay;
+        Frame f; f.rms = rms;
         if (rms > 0.0025f)
         {
-            // YIN difference function
             for (int tau = 1; tau <= tauMaxD; ++tau)
             {
                 float s = 0.0f;
@@ -252,79 +283,69 @@ private:
                 run += diff[(size_t) tau];
                 cmnd[(size_t) tau] = run > 0 ? (float) (diff[(size_t) tau] * tau / run) : 1.0f;
             }
-            const float thr = 0.18f;
             int best = -1;
             for (int tau = tauMinD; tau < tauMaxD; ++tau)
-            {
-                if (cmnd[(size_t) tau] < thr)
+                if (cmnd[(size_t) tau] < 0.17f)
                 {
                     while (tau + 1 < tauMaxD && cmnd[(size_t) tau + 1] < cmnd[(size_t) tau]) ++tau;
                     best = tau; break;
                 }
-            }
             bool voiced = best > 0;
             if (! voiced)
             {
                 float mn = 1e9f;
                 for (int tau = tauMinD; tau < tauMaxD; ++tau)
                     if (cmnd[(size_t) tau] < mn) { mn = cmnd[(size_t) tau]; best = tau; }
-                voiced = mn < 0.3f;
+                voiced = mn < 0.28f;
             }
             if (voiced && best > 1 && best < tauMaxD)
             {
                 const double a = cmnd[(size_t) best - 1], b = cmnd[(size_t) best], c = cmnd[(size_t) best + 1];
                 const double den = a - 2 * b + c;
-                double tau = best + (std::abs (den) > 1e-12 ? 0.5 * (a - c) / den : 0.0);
+                const double tau = best + (std::abs (den) > 1e-12 ? 0.5 * (a - c) / den : 0.0);
                 f.period = refine (tau * D);
                 f.voiced = f.period > fs / kMaxF * 0.9 && f.period < fs / kMinF * 1.1;
             }
         }
 
-        // store raw, then 3-point median-filter period (kills octave glitches)
-        const int64_t k = ++latestRaw;
-        raw[(size_t) (k & (kFrames - 1))] = f;
-        if (k >= 2)
+        // 3-frame median (octave-glitch killer), 2-of-3 voicing
+        raw[0] = raw[1]; raw[1] = raw[2]; raw[2] = f; ++nRaw;
+        Frame o = f;
+        const int vc = (int) raw[0].voiced + (int) raw[1].voiced + (int) raw[2].voiced;
+        o.voiced = (nRaw >= 3) && vc >= 2;
+        if (o.voiced)
         {
-            Frame a = raw[(size_t) ((k - 2) & (kFrames - 1))], b = raw[(size_t) ((k - 1) & (kFrames - 1))], c = f;
-            Frame o = b;
-            const int vc = (int) a.voiced + (int) b.voiced + (int) c.voiced;
-            o.voiced = vc >= 2;
-            if (o.voiced)
+            if (vc == 3)
             {
-                double p[3]; int np = 0;
-                if (a.voiced) p[np++] = a.period;
-                if (b.voiced) p[np++] = b.period;
-                if (c.voiced) p[np++] = c.period;
-                std::sort (p, p + np);
-                o.period = (np == 3) ? p[1] : (b.voiced ? b.period : p[0]);
+                const double a = raw[0].period, b = raw[1].period, c = raw[2].period;
+                o.period = std::max (std::min (a, b), std::min (std::max (a, b), c)); // median of 3
             }
-            filt[(size_t) ((k - 1) & (kFrames - 1))] = o;
-            latestFilt = k - 1;
-
-            if (o.voiced)
-            {
-                const double midi = 69.0 + 12.0 * std::log2 (fs / o.period / 440.0);
-                tInputMidi = (float) midi;
-                if (detecting)
-                {
-                    const int pc = (((int) std::lround (midi)) % 12 + 12) % 12;
-                    pcHist[pc] += std::min (1.0, (double) o.rms * 20.0);
-                    detectVoicedSec += hopFull / fs;
-                    tDetectProgress = (float) std::min (1.0, detectVoicedSec / kDetectSeconds);
-                    if (detectVoicedSec >= kDetectSeconds) finishDetect();
-                }
-            }
-            else tInputMidi = -1.0f;
+            else o.period = f.voiced ? f.period : raw[1].period;
         }
+        cur = o;
+
+        if (o.voiced)
+        {
+            const double midi = 69.0 + 12.0 * std::log2 (fs / o.period / 440.0);
+            tInputMidi = (float) midi;
+            if (detecting)
+            {
+                const int pc = (((int) std::lround (midi)) % 12 + 12) % 12;
+                pcHist[pc] += std::min (1.0, (double) o.rms * 20.0);
+                detectVoicedSec += hopD * D / fs;
+                tDetectProgress = (float) std::min (1.0, detectVoicedSec / kDetectSeconds);
+                if (detectVoicedSec >= kDetectSeconds) finishDetect();
+            }
+        }
+        else tInputMidi = -1.0f;
     }
 
-    /** Full-rate refinement of the period around an estimate (raw difference minimum). */
     double refine (double est)
     {
         const int lo = std::max (2, (int) std::floor (est) - D - 1);
         const int hi = std::min ((int) std::ceil (fs / kMinF) + 4, (int) std::ceil (est) + D + 1);
         if (hi - lo < 2) return est;
-        const int W = std::min (refineWin, (int) (3 * est));
+        const int W = std::min (refineWin, (int) (2 * est));
         const int64_t s0 = n - W - hi;
         float best = 1e30f; int bt = lo;
         float vals[64]; int nv = 0;
@@ -347,15 +368,6 @@ private:
             if (den > 1e-12) return bt + 0.5 * (a - c) / den;
         }
         return (double) bt;
-    }
-
-    Frame lookup (double t) const
-    {
-        if (latestFilt < 0) return {};
-        const Frame& last = filt[(size_t) (latestFilt & (kFrames - 1))];
-        int64_t back = (int64_t) std::floor (((double) last.center - t) / hopFull + 0.5);
-        back = std::clamp<int64_t> (back, 0, std::min<int64_t> (latestFilt, kFrames - 4));
-        return filt[(size_t) ((latestFilt - back) & (kFrames - 1))];
     }
 
     void finishDetect()
@@ -388,6 +400,47 @@ private:
         tDetectProgress = -1.0f;
     }
 
+    // ---------------- pitch marks (one per period, on the waveform peak) ----------------
+    void trackMarks()
+    {
+        if (! cur.voiced) { markValid = false; return; }
+        const double P = cur.period;
+        const double guard = std::ceil (0.13 * P) + 1.0;
+        if (! markValid || lastMark < (double) n - 3.0 * P)
+        {
+            if ((double) n < P + guard + 2) return;
+            lastMark = peakIn ((double) n - P - guard, (double) n - guard, true);
+            markValid = true;
+            return;
+        }
+        while (lastMark + P + guard <= (double) n)
+        {
+            const double cand = lastMark + P;
+            double m = peakIn (cand - 0.12 * P, cand + 0.12 * P, false);
+            if (m <= lastMark + 0.5 * P) m = cand;
+            lastMark = m;
+        }
+    }
+
+    double peakIn (double a, double b, bool choosePolarity)
+    {
+        const int64_t ia = (int64_t) std::ceil (a), ib = (int64_t) std::floor (b);
+        if (ib <= ia) return a;
+        if (choosePolarity)
+        {
+            float mx = -1e9f, mn = 1e9f;
+            for (int64_t t = ia; t <= ib; ++t) { const float v = mono[(size_t) (t & ringMask)]; mx = std::max (mx, v); mn = std::min (mn, v); }
+            polarity = (mx >= -mn) ? 1.0f : -1.0f;
+        }
+        float best = -1e9f; int64_t bt = ia;
+        for (int64_t t = ia; t <= ib; ++t)
+        {
+            const float v = polarity * mono[(size_t) (t & ringMask)];
+            if (v > best) { best = v; bt = t; }
+        }
+        return (double) bt;
+    }
+
     // ---------------- note logic ----------------
     int nearestAllowed (double midi) const
     {
@@ -415,7 +468,6 @@ private:
         }
     }
 
-    /** Returns the shift (semitones) to apply for a voiced grain at input pitch midi. */
     double updateShift (double midi, double dt, bool onset)
     {
         const int cand = nearestAllowed (midi);
@@ -425,7 +477,6 @@ private:
         else if (cand != curNote && std::abs (midi - curNote) - std::abs (midi - cand) > hysteresis())
             curNote = cand;
 
-        // humanize: slow-moving centre keeps natural vibrato (re-centred on every new note)
         const double tauC = 0.12;
         if (onset || curNote != prevNote || std::abs (center - midi) > 1.0) center = midi;
         else center += (midi - center) * (1.0 - std::exp (-dt / tauC));
@@ -435,124 +486,82 @@ private:
         const double desired = curNote - eff;
 
         double tauR = std::max (0.0, (double) prm.retuneMs) / 1000.0;
-        if (prm.mode == Mode::TPain) tauR = std::min (tauR, 0.004); // robot = instant snap
+        if (prm.mode == Mode::Robotic) tauR = std::min (tauR, 0.004); // robotic = instant snap
         if (onset || tauR <= 0.0005) shift = desired;
         else shift += (desired - shift) * (1.0 - std::exp (-dt / tauR));
         return shift;
     }
 
-    // ---------------- synthesis (TD-PSOLA) ----------------
-    void synthesise (int C, double fF)
+    // ---------------- low-latency PSOLA: grains are created just in time ----------------
+    void spawnGrains (double fF)
     {
-        if (nextMark < (double) n - 4 * Pmax) nextMark = (double) n;
+        const double t = (double) n;
+        if (nextMark < t - 2.0 * Pmax) nextMark = t;
 
-        for (int guard = 0; guard < 64; ++guard)
+        for (int guard = 0; guard < 16 && numGrains < kMaxGrains; ++guard)
         {
-            const double target = nextMark - latency;     // input time this grain represents
-            const Frame f = lookup (target);
-            const bool voiced = f.voiced && f.period > 0;
-            const double P = voiced ? f.period : Punv;
+            const bool voiced = cur.voiced && markValid;
+            const double P = voiced ? cur.period : Punv;
             const double H = P / fF;
-            if (nextMark - H > (double) n) break;
+            if (nextMark - H > t) break;
 
-            double hop = P, src;
+            // causality: reading src + (tau-dst)*fF must stay <= tau-2 for the whole grain
+            const double limit = nextMark - H * std::abs (fF - 1.0) - 3.0;
+            double src, hop = P;
             if (voiced)
             {
                 const bool onset = ! wasVoiced;
-                if (onset || inMark > target || inMark < target - 3 * P)
-                {
-                    inMark = peakIn (target - P, target, true);
-                }
-                while (inMark + P <= target) inMark += P;
-                inMark = peakIn (inMark - P * 0.12, inMark + P * 0.12, false);
-                if (inMark > target) inMark -= P;
+                src = lastMark;
+                while (src > limit) src -= P;
 
                 const double midi = 69.0 + 12.0 * std::log2 (fs / P / 440.0);
                 const double s = updateShift (midi, lastHop / fs, onset);
                 const double ratio = std::pow (2.0, (s + prm.transpose) / 12.0);
                 hop = P / std::clamp (ratio, 0.25, 4.0);
                 lastHop = hop;
-                src = inMark;
                 wasVoiced = true;
                 tTargetNote = curNote;
                 tCorrection = (float) s;
             }
             else
             {
-                src = target;
+                src = std::min (limit, nextMark - 0.5 * Punv);
                 if (wasVoiced) { tTargetNote = -1; tCorrection = 0.0f; }
                 wasVoiced = false;
             }
-            addGrain (C, src, nextMark, H, fF, std::min (hop / H, 2.0));
+
+            Grain& g = grains[numGrains++];
+            g.src = src; g.dst = nextMark; g.invH = 1.0 / H; g.fF = fF; g.gain = std::min (hop / H, 2.0);
+            delaySm += ((nextMark - src) - delaySm) * 0.05;
             nextMark += hop;
         }
     }
 
-    /** Find a pitch mark (signal peak) in [a,b] of the mono input. */
-    double peakIn (double a, double b, bool choosePolarity)
-    {
-        const int64_t ia = (int64_t) std::ceil (a), ib = (int64_t) std::floor (b);
-        if (ib <= ia) return a;
-        if (choosePolarity)
-        {
-            float mx = -1e9f, mn = 1e9f;
-            for (int64_t t = ia; t <= ib; ++t) { const float v = mono[(size_t) (t & ringMask)]; mx = std::max (mx, v); mn = std::min (mn, v); }
-            polarity = (mx >= -mn) ? 1.0f : -1.0f;
-        }
-        float best = -1e9f; int64_t bt = ia;
-        for (int64_t t = ia; t <= ib; ++t)
-        {
-            const float v = polarity * mono[(size_t) (t & ringMask)];
-            if (v > best) { best = v; bt = t; }
-        }
-        return (double) bt;
-    }
-
-    void addGrain (int C, double srcCenter, double dstCenter, double H, double fF, double gain)
-    {
-        const int64_t k0 = std::max<int64_t> (n, (int64_t) std::ceil (dstCenter - H));
-        const int64_t k1 = (int64_t) std::floor (dstCenter + H);
-        const double invH = 1.0 / H;
-        for (int64_t k = k0; k <= k1; ++k)
-        {
-            const double u = (k - dstCenter) * invH;
-            const float w = (float) ((0.5 + 0.5 * std::cos (kPi * u)) * gain);
-            const double sp = srcCenter + (k - dstCenter) * fF;
-            const double fl = std::floor (sp);
-            const float fr = (float) (sp - fl);
-            const int64_t i0 = (int64_t) fl;
-            const size_t a = (size_t) (i0 & ringMask), b = (size_t) ((i0 + 1) & ringMask), o = (size_t) (k & ringMask);
-            for (int c = 0; c < C; ++c)
-            {
-                const auto& x = in[(size_t) c];
-                out[(size_t) c][o] += (x[a] + (x[b] - x[a]) * fr) * w;
-            }
-        }
-    }
-
     // ---------------- state ----------------
-    static constexpr int kFrames = 256;
     static constexpr double kDetectSeconds = 8.0;
+    static constexpr int kMaxGrains = 48;
 
     double fs = 48000.0, fsd = 12000.0;
-    int nch = 2, D = 4, tauMaxD = 160, tauMinD = 11, winD = 320, hopD = 64, hopFull = 256;
-    double Pmax = 640, Punv = 216;
-    int refineWin = 1024, centerDelay = 1000, latency = 1600;
-    int ringSize = 8192, ringMask = 8191, decSize = 2048;
+    int nch = 2, D = 4, tauMaxD = 174, tauMinD = 10, winD = 182, hopD = 32;
+    double Pmax = 686, Punv = 192;
+    int refineWin = 768, latency = 96;
+    int ringSize = 16384, ringMask = 16383, decSize = 2048;
 
-    std::vector<std::vector<float>> in, out;
+    std::vector<std::vector<float>> in;
     std::vector<float> mono, dec, fir, diff, cmnd;
     int64_t n = 0, decN = 0;
 
-    std::array<Frame, kFrames> raw {}, filt {};
-    int64_t latestRaw = -1, latestFilt = -1;
+    Frame raw[3] {}, cur {};
+    int64_t nRaw = 0;
 
-    double nextMark = 0, inMark = 0, lastHop = 200;
-    bool wasVoiced = false;
+    Grain grains[kMaxGrains] {};
+    int numGrains = 0;
+    double nextMark = 0, lastMark = 0, lastHop = 200, delaySm = 0;
+    bool markValid = false, wasVoiced = false;
     float polarity = 1.0f;
     int curNote = -1;
     double shift = 0, center = 0;
-    int voicedRun = 0, unvoicedRun = 0;
+    double eIn = 0, eOut = 0, comp = 1.0, aLvl = 0.0003, aComp = 0.0004;
 
     bool detecting = false;
     double pcHist[12] {};

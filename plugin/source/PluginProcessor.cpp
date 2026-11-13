@@ -12,7 +12,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout UBTuneProcessor::createLayou
     for (int i = 0; i < ubt::NumScales; ++i) scales.add (juce::String (ubt::scaleName (i)).toLowerCase().replace ("pentatonic", "pent.").toUpperCase());
     scales.add ("CUSTOM");
 
-    p.push_back (std::make_unique<APC> (juce::ParameterID { ids::mode, 1 }, "Mode", juce::StringArray { "Smooth", "Pro", "T-Pain" }, 1));
+    p.push_back (std::make_unique<APC> (juce::ParameterID { ids::mode, 1 }, "Mode", juce::StringArray { "Smooth", "Pro", "Robotic" }, 1));
     p.push_back (std::make_unique<APC> (juce::ParameterID { ids::key, 1 }, "Key", notes, 9));
     p.push_back (std::make_unique<APC> (juce::ParameterID { ids::scale, 1 }, "Scale", scales, (int) ubt::PentMinor));
 
@@ -101,7 +101,7 @@ void UBTuneProcessor::applyModePreset (int mode)
     {
         case 0: setParam (ids::retune, 70.0f); setParam (ids::humanize, 60.0f); break;   // Waves Real-Time style
         case 1: setParam (ids::retune, 20.0f); setParam (ids::humanize, 25.0f); break;   // Auto-Tune Pro style
-        default:                                                                          // T-Pain / MetaTune robot
+        default:                                                                          // Robotic (hard snap, MetaTune / T-Pain style)
         {
             setParam (ids::retune, 0.0f); setParam (ids::humanize, 0.0f);
             const int s = getScale();

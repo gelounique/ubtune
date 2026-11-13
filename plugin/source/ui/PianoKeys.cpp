@@ -1,127 +1,144 @@
 #include "PianoKeys.h"
 #include "Theme.h"
 
-static int whiteIndex (int n) { static const int w[] = { 0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6 }; return (n / 12) * 7 + w[n % 12]; }
+static const char* kNames[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+static const int kWhiteIdx[] = { 0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6 };
 
-juce::Rectangle<float> PianoKeys::keyRect (int n) const
+juce::Rectangle<float> PianoKeys::keyRect (int pc) const
 {
     auto a = keysArea();
-    const int nWhite = whiteIndex (hi) - whiteIndex (lo) + 1;
-    const float ww = a.getWidth() / (float) nWhite;
-    const float x = a.getX() + (whiteIndex (n) - whiteIndex (lo)) * ww;
-    if (! isBlack (n)) return { x, a.getY(), ww, a.getHeight() };
-    const float bw = ww * 0.62f;
-    return { x + ww - bw * 0.5f, a.getY(), bw, a.getHeight() * 0.62f };
+    const float ww = a.getWidth() / 7.0f;
+    if (! isBlack (pc)) return { a.getX() + kWhiteIdx[pc] * ww, a.getY(), ww, a.getHeight() };
+    const float bw = ww * 0.60f;
+    return { a.getX() + kWhiteIdx[pc - 1] * ww + ww - bw * 0.5f, a.getY(), bw, a.getHeight() * 0.60f };
 }
 
-float PianoKeys::xForPitch (float m) const
+float PianoKeys::xForPc (float pc) const
 {
-    const int n0 = (int) std::floor (m);
-    const float f = m - n0;
-    const auto r0 = keyRect (juce::jlimit (lo, hi, n0)), r1 = keyRect (juce::jlimit (lo, hi, n0 + 1));
-    return r0.getCentreX() + (r1.getCentreX() - r0.getCentreX()) * f;
+    pc = std::fmod (std::fmod (pc, 12.0f) + 12.0f, 12.0f);
+    const int p0 = (int) std::floor (pc);
+    const float f = pc - p0;
+    const float x0 = keyRect (p0).getCentreX();
+    const float x1 = p0 == 11 ? keysArea().getRight() + (keyRect (0).getCentreX() - keysArea().getX()) : keyRect (p0 + 1).getCentreX();
+    float x = x0 + (x1 - x0) * f;
+    if (x > keysArea().getRight()) x -= keysArea().getWidth();
+    return x;
 }
 
 int PianoKeys::noteAt (juce::Point<float> p) const
 {
     if (! keysArea().contains (p)) return -1;
-    for (int n = lo; n <= hi; ++n) if (isBlack (n) && keyRect (n).contains (p)) return n;
-    for (int n = lo; n <= hi; ++n) if (! isBlack (n) && keyRect (n).contains (p)) return n;
+    for (int pc = 0; pc < 12; ++pc) if (isBlack (pc) && keyRect (pc).contains (p)) return pc;
+    for (int pc = 0; pc < 12; ++pc) if (! isBlack (pc) && keyRect (pc).contains (p)) return pc;
     return -1;
 }
 
 void PianoKeys::mouseDown (const juce::MouseEvent& e)
 {
-    const int n = noteAt (e.position);
-    if (n >= 0 && onToggle) onToggle (n % 12);
+    const int pc = noteAt (e.position);
+    if (pc >= 0 && onToggle) onToggle (pc);
 }
 
 void PianoKeys::advance (float dt)
 {
-    const int sung = in > 0 ? (int) std::lround (in) : -1;
-    for (int n = 0; n < 128; ++n)
+    t += dt;
+    const int sung = in > 0 ? ((int) std::lround (in) % 12 + 12) % 12 : -1;
+    const int tpc = target >= 0 ? target % 12 : -1;
+    for (int i = 0; i < 12; ++i)
     {
-        const float tg = (n == sung) ? 1.0f : 0.0f;
-        glow[(size_t) n] += (tg - glow[(size_t) n]) * (1.0f - std::exp (-dt * (tg > glow[(size_t) n] ? 30.0f : 5.0f)));
-        const float tt = (n == target) ? 1.0f : 0.0f;
-        tglow[(size_t) n] += (tt - tglow[(size_t) n]) * (1.0f - std::exp (-dt * (tt > tglow[(size_t) n] ? 30.0f : 6.0f)));
+        const float a = i == sung ? 1.0f : 0.0f;
+        glow[(size_t) i] += (a - glow[(size_t) i]) * (1.0f - std::exp (-dt * (a > glow[(size_t) i] ? 30.0f : 4.0f)));
+        const float b = i == tpc ? 1.0f : 0.0f;
+        tglow[(size_t) i] += (b - tglow[(size_t) i]) * (1.0f - std::exp (-dt * (b > tglow[(size_t) i] ? 30.0f : 5.0f)));
     }
-    if (in > 0)
+    // heatmaps: continuous energy along the octave
+    const float decay = std::exp (-dt * 1.6f);
+    const float w = (float) getWidth();
+    const float e = juce::jlimit (0.0f, 1.0f, 0.35f + lvl * 8.0f);
+    for (int b = 0; b < kHeatBins; ++b)
     {
-        const float x = xForPitch (juce::jlimit ((float) lo, (float) hi, in));
-        puckX = puckX < 0 ? x : puckX + (x - puckX) * (1.0f - std::exp (-dt * 22.0f));
+        heatIn[(size_t) b] *= decay;
+        heatOut[(size_t) b] *= decay;
     }
-    puckAlpha += ((in > 0 ? 1.0f : 0.0f) - puckAlpha) * (1.0f - std::exp (-dt * 10.0f));
+    if (w > 0)
+    {
+        auto splat = [&] (std::array<float, kHeatBins>& h, float x, float amt, float spread)
+        {
+            const float c = x / w * kHeatBins;
+            for (int b = (int) (c - spread * 3); b <= (int) (c + spread * 3); ++b)
+            {
+                const int bb = (b % kHeatBins + kHeatBins) % kHeatBins;
+                const float d = (b - c) / spread;
+                h[(size_t) bb] = juce::jmin (1.0f, h[(size_t) bb] + amt * std::exp (-d * d) * dt * 6.0f);
+            }
+        };
+        if (in > 0) splat (heatIn, xForPc (in), e, 2.5f);
+        if (target >= 0) splat (heatOut, keyRect (target % 12).getCentreX(), e, 1.6f);
+    }
 }
 
 void PianoKeys::paint (juce::Graphics& g)
 {
     using namespace theme;
-    const auto a = keysArea();
-
-    // pitch rail
-    const float railY = 9.0f;
-    g.setColour (juce::Colours::white.withAlpha (0.06f));
-    g.fillRoundedRectangle (a.getX(), railY - 1.0f, a.getWidth(), 2.0f, 1.0f);
-    if (puckAlpha > 0.02f && puckX >= 0)
+    // ---- heatmaps ----
+    for (int row = 0; row < 2; ++row)
     {
-        if (target >= lo && target <= hi)
+        auto r = heatRow (row).toFloat();
+        g.setColour (juce::Colours::white.withAlpha (0.04f));
+        g.fillRoundedRectangle (r, 4.0f);
+        const auto& h = row == 0 ? heatIn : heatOut;
+        const float bw = r.getWidth() / kHeatBins;
+        for (int b = 0; b < kHeatBins; ++b)
         {
-            const float tx = keyRect (target).getCentreX();
-            g.setColour (magenta.withAlpha (0.55f * puckAlpha));
-            g.drawLine (juce::jmin (tx, puckX), railY, juce::jmax (tx, puckX), railY, 2.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.8f * puckAlpha));
-            g.fillRect (tx - 1.0f, railY - 5.0f, 2.0f, 10.0f);
+            const float v = h[(size_t) b];
+            if (v < 0.01f) continue;
+            const float n = 0.75f + 0.25f * std::sin (b * 12.9898f + t * 7.0f);
+            g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, v * n)));
+            const float hh = r.getHeight() * (row == 0 ? juce::jlimit (0.3f, 1.0f, v * 1.3f) : 1.0f);
+            g.fillRect (r.getX() + b * bw, r.getCentreY() - hh * 0.5f, bw + 0.6f, hh);
         }
-        g.setColour (lila.withAlpha (0.35f * puckAlpha)); g.fillEllipse (puckX - 9, railY - 9, 18, 18);
-        g.setColour (lilaLight.withAlpha (puckAlpha)); g.fillEllipse (puckX - 4, railY - 4, 8, 8);
     }
 
-    auto drawKey = [&] (int n)
+    // ---- keys ----
+    auto drawKey = [&] (int pc)
     {
-        auto r = keyRect (n);
-        const bool black = isBlack (n);
-        const bool inScale = (msk >> (n % 12)) & 1;
-        const float gl = glow[(size_t) n], tg = tglow[(size_t) n];
-        auto kr = black ? r : r.reduced (1.0f, 0.0f);
-        const float rad = black ? 3.0f : 5.0f;
-
-        juce::Colour base = black ? juce::Colour (0xff09070d) : (inScale ? juce::Colour (0xff221d2c) : juce::Colour (0xff15121b));
-        if (n == hover) base = base.brighter (0.25f);
-        juce::ColourGradient gr (base.brighter (0.08f), kr.getX(), kr.getY(), base.darker (0.25f), kr.getX(), kr.getBottom(), false);
+        auto r = keyRect (pc);
+        const bool black = isBlack (pc);
+        const bool inScale = (msk >> pc) & 1;
+        auto kr = black ? r : r.reduced (1.5f, 0.0f);
+        const float rad = 6.0f;
+        juce::Colour base = black ? (inScale ? juce::Colour (0xff3a3a41) : juce::Colour (0xff0c0c0e))
+                                  : (inScale ? juce::Colour (0xff5c5c65) : juce::Colour (0xff19191c));
+        if (pc == hover) base = base.brighter (0.25f);
+        juce::ColourGradient gr (base.brighter (0.10f), kr.getX(), kr.getY(), base.darker (0.25f), kr.getX(), kr.getBottom(), false);
         g.setGradientFill (gr);
         g.fillRoundedRectangle (kr, rad);
 
-        if (tg > 0.01f)
-        {
-            g.setColour (magenta.withAlpha (0.25f * tg));
-            g.fillRoundedRectangle (kr, rad);
-        }
+        const float gl = glow[(size_t) pc], tg = tglow[(size_t) pc];
         if (gl > 0.01f)
         {
-            juce::ColourGradient lg (lilaLight.withAlpha (0.95f * gl), kr.getCentreX(), kr.getBottom(), lila.withAlpha (0.15f * gl), kr.getCentreX(), kr.getY(), false);
+            juce::ColourGradient lg (juce::Colours::white.withAlpha (0.95f * gl), kr.getCentreX(), kr.getBottom(), juce::Colours::white.withAlpha (0.25f * gl), kr.getCentreX(), kr.getY(), false);
             g.setGradientFill (lg);
             g.fillRoundedRectangle (kr, rad);
-            g.setColour (lila.withAlpha (0.25f * gl));
-            g.drawRoundedRectangle (kr.expanded (2.0f), rad + 2.0f, 3.0f);
         }
-        g.setColour (juce::Colours::white.withAlpha (black ? 0.10f : 0.06f));
+        if (tg > 0.01f)
+        {
+            g.setColour (juce::Colours::white.withAlpha (tg));
+            g.fillRoundedRectangle (kr.getX() + 4.0f, kr.getY() + 34.0f, kr.getWidth() - 8.0f, 3.0f, 1.5f);
+        }
+        g.setColour (juce::Colours::black.withAlpha (0.6f));
         g.drawRoundedRectangle (kr, rad, 1.0f);
 
-        if (inScale)
+        // label at the top of the key
+        g.setColour (gl > 0.5f ? bg : (inScale ? text : dim));
+        g.setFont (sans (pc == root ? 17.0f : 15.0f, 700));
+        g.drawText (kNames[pc], kr.withHeight (30.0f), juce::Justification::centred);
+        if (pc == root && inScale)
         {
-            const float d = black ? 5.0f : 6.0f;
-            const bool isRoot = (n % 12) == root;
-            g.setColour (gl > 0.4f ? juce::Colours::white : (isRoot ? magenta : lila));
-            g.fillEllipse (kr.getCentreX() - d * 0.5f, kr.getBottom() - (black ? 10.0f : 26.0f), d, d);
-        }
-        if (! black && n % 12 == 0)
-        {
-            g.setColour (gl > 0.4f ? bg : dim);
-            g.setFont (mono (9.5f));
-            g.drawText ("C" + juce::String (n / 12 - 1), kr.withTrimmedTop (kr.getHeight() - 16.0f), juce::Justification::centred);
+            g.setColour (gl > 0.5f ? bg : text);
+            g.fillEllipse (kr.getCentreX() - 2.5f, kr.getY() + 25.0f, 5.0f, 5.0f);
         }
     };
-    for (int n = lo; n <= hi; ++n) if (! isBlack (n)) drawKey (n);
-    for (int n = lo; n <= hi; ++n) if (isBlack (n)) drawKey (n);
+    for (int pc = 0; pc < 12; ++pc) if (! isBlack (pc)) drawKey (pc);
+    for (int pc = 0; pc < 12; ++pc) if (isBlack (pc)) drawKey (pc);
 }

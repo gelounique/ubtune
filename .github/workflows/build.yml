@@ -43,6 +43,25 @@ jobs:
           $ver = (Select-String -Path CMakeLists.txt -Pattern 'project\(UBTune VERSION ([0-9.]+)').Matches[0].Groups[1].Value
           iscc /DAppVersion=$ver /DBuildDir="..\..\build\UBTune_artefacts\Release" installer\windows\UBTune.iss
           Get-FileHash dist\UBTune-Windows-Setup.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  UBTune-Windows-Setup.exe" } | Out-File -Encoding ascii dist\UBTune-Windows-Setup.exe.sha256
+      - name: Install test (silent install -> pluginval installed VST3 -> uninstall)
+        shell: pwsh
+        run: |
+          Start-Process -Wait -FilePath dist\UBTune-Windows-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/COMPONENTS="vst3,app"','/LOG=install.log'
+          $vst = "$env:CommonProgramFiles\VST3\UBTune.vst3"
+          if (-not (Test-Path "$vst\Contents\x86_64-win\UBTune.vst3")) { Get-Content install.log -Tail 40; throw "VST3 not installed" }
+          if (-not (Test-Path "$env:ProgramFiles\UBTune\UBTune.exe")) { throw "App not installed" }
+          ./pv/pluginval.exe --strictness-level 5 --timeout-ms 600000 --validate "$vst"
+          if ($LASTEXITCODE -ne 0) { throw "pluginval on installed VST3 failed" }
+          $app = Start-Process -PassThru -FilePath "$env:ProgramFiles\UBTune\UBTune.exe"
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { throw "Standalone app exited/crashed (code $($app.ExitCode))" }
+          Stop-Process -Id $app.Id -Force
+          Start-Sleep -Seconds 2
+          $un = Get-ChildItem "$env:ProgramFiles\UBTune\unins*.exe" | Select-Object -First 1
+          Start-Process -Wait -FilePath $un.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          Start-Sleep -Seconds 3
+          if (Test-Path $vst) { throw "Uninstaller left VST3 behind" }
+          Write-Host "Install / validate / launch / uninstall OK"
       - uses: actions/upload-artifact@v4
         with: { name: UBTune-Windows, path: "dist/*" }
       - uses: actions/upload-artifact@v4
@@ -79,6 +98,29 @@ jobs:
         run: |
           VER=$(sed -nE 's/^project\(UBTune VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
           bash installer/mac/package.sh build/UBTune_artefacts/Release "$VER"
+      - name: Install test (pkg -> auval/pluginval installed -> app launch -> uninstaller)
+        run: |
+          rm -rf ~/Library/Audio/Plug-Ins/Components/UBTune.component
+          hdiutil attach dist/UBTune-macOS.dmg -nobrowse -mountpoint /tmp/ubdmg
+          sudo installer -pkg "/tmp/ubdmg/UBTune Installer.pkg" -target /
+          test -d /Library/Audio/Plug-Ins/VST3/UBTune.vst3
+          test -d /Library/Audio/Plug-Ins/Components/UBTune.component
+          test -d /Applications/UBTune.app
+          codesign --verify --deep --strict /Library/Audio/Plug-Ins/Components/UBTune.component
+          codesign --verify --deep --strict /Applications/UBTune.app
+          killall -9 AudioComponentRegistrar || true; sleep 3
+          auval -v aufx UbTn Unqb | tail -4
+          auval -v aufx UbTn Unqb | grep -q "AU VALIDATION SUCCEEDED"
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --timeout-ms 600000 --validate /Library/Audio/Plug-Ins/VST3/UBTune.vst3
+          /Applications/UBTune.app/Contents/MacOS/UBTune & APP=$!
+          sleep 8
+          kill -0 $APP && echo "Standalone running OK"
+          kill $APP || true
+          sudo bash "/tmp/ubdmg/UBTune deinstallieren.command"
+          test ! -e /Library/Audio/Plug-Ins/VST3/UBTune.vst3
+          test ! -e /Applications/UBTune.app
+          hdiutil detach /tmp/ubdmg
+          echo "Install / validate / launch / uninstall OK"
       - uses: actions/upload-artifact@v4
         with: { name: UBTune-macOS, path: "dist/*" }
       - uses: actions/upload-artifact@v4

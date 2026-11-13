@@ -1,30 +1,33 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-/** Animated piano: shows the sung pitch (glow + floating puck), the tuned target note and
-    the active scale. Click a key to toggle that pitch class (custom scale). */
+/** One-octave note keyboard (MetaTune style) with INPUT / OUTPUT heatmaps on top.
+    In-scale keys are lit, the sung note flashes white, the target note gets a bar.
+    Click a key to add / remove that note from the scale. Monochrome by design. */
 class PianoKeys : public juce::Component
 {
 public:
-    PianoKeys (int lowest = 36, int highest = 84) : lo (lowest), hi (highest) {}
-    void setState (float inputMidi, int targetNote, uint16_t mask, int key) { in = inputMidi; target = targetNote; msk = mask; root = key; }
+    static constexpr int kHeatBins = 288;
+    PianoKeys() = default;
+    void setState (float inputMidi, int targetNote, uint16_t mask, int key, float level) { in = inputMidi; target = targetNote; msk = mask; root = key; lvl = level; }
     void advance (float dt);
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
-    void mouseMove (const juce::MouseEvent& e) override { hover = noteAt (e.position); repaint(); }
+    void mouseMove (const juce::MouseEvent& e) override { const int h = noteAt (e.position); if (h != hover) { hover = h; repaint(); } }
     void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
     std::function<void (int pitchClass)> onToggle;
+    juce::Rectangle<int> heatRow (int i) const { return { 0, i * 20, getWidth(), 16 }; }
 
 private:
-    static bool isBlack (int n) { const int pc = n % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; }
-    juce::Rectangle<float> keyRect (int note) const;
-    float xForPitch (float midi) const;
+    static bool isBlack (int pc) { return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; }
+    juce::Rectangle<float> keysArea() const { return getLocalBounds().toFloat().withTrimmedTop (44.0f); }
+    juce::Rectangle<float> keyRect (int pc) const;
+    float xForPc (float pc) const;
     int noteAt (juce::Point<float>) const;
-    juce::Rectangle<float> keysArea() const { return getLocalBounds().toFloat().withTrimmedTop (22.0f); }
 
-    int lo, hi, hover = -1;
-    float in = -1.0f, puckX = -1.0f, puckAlpha = 0.0f;
-    int target = -1, root = 0;
+    float in = -1.0f, lvl = 0.0f, t = 0.0f;
+    int target = -1, root = 0, hover = -1;
     uint16_t msk = 0x0FFF;
-    std::array<float, 128> glow {}, tglow {};
+    std::array<float, 12> glow {}, tglow {};
+    std::array<float, kHeatBins> heatIn {}, heatOut {};
 };
