@@ -15,7 +15,8 @@
     return mix(b, C.white, Math.max(0, bright - 0.78) * 2.2);
   }
   function fit(cv) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth, h = cv.clientHeight;
+    /* UBQ.s = adaptive Qualität (1 = volle Schärfe); sinkt nur, wenn ein Gerät nicht mehr flüssig hinterherkommt */
+    const dpr = Math.max(0.75, Math.min(window.devicePixelRatio || 1, 2) * ((window.UBQ && window.UBQ.s) || 1)), w = cv.clientWidth, h = cv.clientHeight;
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     return { w, h, dpr };
   }

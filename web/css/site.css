@@ -71,7 +71,7 @@ code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.06);pad
 
 /* marquee */
 .marquee{border-block:1px solid var(--line);overflow:hidden;padding:18px 0}
-.mq-track{display:flex;gap:56px;width:max-content;animation:mq 34s linear infinite}
+.mq-track{display:flex;gap:56px;width:max-content;animation:mq 34s linear infinite;will-change:transform}
 .mq-track span{font:600 13px var(--mono);letter-spacing:.2em;color:var(--tx3);text-transform:uppercase;display:flex;align-items:center;gap:56px}
 .mq-track span::after{content:'✦';color:#fff;font-size:9px;opacity:.5}
 @keyframes mq{to{transform:translateX(-50%)}}

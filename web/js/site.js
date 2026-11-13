@@ -165,8 +165,19 @@
 
   /* main loop */
   let last = performance.now(), curvePh = 0;
+  /* adaptive Qualität: volle Auflösung, solange es flüssig läuft – erst bei Rucklern stufenweise runter (und später wieder hoch) */
+  const Q = (window.UBQ = { s: 1 }), QL = [1, 0.85, 0.72, 0.6]; let qi = 0, qAcc = 0, qN = 0, qGood = 0;
+  function quality(ms) {
+    if (document.hidden || ms > 250) return;
+    qAcc += ms; if (++qN < 40) return;
+    const avg = qAcc / qN; qAcc = qN = 0;
+    if (avg > 21 && qi < QL.length - 1) { Q.s = QL[++qi]; qGood = 0; }
+    else if (avg < 17.6 && qi > 0 && ++qGood >= 8) { Q.s = QL[--qi]; qGood = 0; }
+  }
+  const txtCache = new WeakMap();
+  const setTxt = (el, v) => { if (txtCache.get(el) !== v) { txtCache.set(el, v); el.textContent = v; } };
   function frame(now) {
-    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
+    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); quality(now - last); last = now;
     if (isVis($('#heroOrb')) && !reduced) { heroStep(dt); heroOrb.draw(); heroKeys.draw(); }
     if (isVis($('#demoOrb'))) {
       const live = tel && (micStream || voxSrc);
@@ -176,11 +187,11 @@
       let txt = live ? '— singen —' : '— bereit —';
       if (t.inputMidi > 0) { const n = Math.round(t.inputMidi), c = Math.round((t.inputMidi - n) * 100); txt = `IN ${NOTES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1} ${c >= 0 ? '+' : ''}${c}¢` + (t.targetNote >= 0 ? `  →  ${NOTES[t.targetNote % 12]}${Math.floor(t.targetNote / 12) - 1}` : ''); }
       if (live && t.delayMs) txt += `  ·  ${t.delayMs.toFixed(1)} MS`;
-      $('#demoRead').textContent = st.bypass ? txt + '  ·  ORIGINAL' : txt;
+      setTxt($('#demoRead'), st.bypass ? txt + '  ·  ORIGINAL' : txt);
       const det = t.detect >= 0, btn = $('#detectBtn');
-      btn.classList.toggle('on', det); $('#detectBar').style.width = det ? `${Math.max(2, t.detect * 100)}%` : '0';
-      $('#detectTitle').textContent = det ? `LISTENING ${Math.round(t.detect * 100)} %` : 'DETECT KEY';
-      $('#detectSub').textContent = det ? 'SING WEITER · KLICK = STOPP' : lastDetected ? `ERKANNT: ${lastDetected}` : '8 SEK SINGEN · SETZT KEY + SCALE';
+      if (btn.classList.contains('on') !== det) btn.classList.toggle('on', det); const bw = det ? `${Math.max(2, t.detect * 100).toFixed(1)}%` : '0'; if (txtCache.get(btn) !== bw) { txtCache.set(btn, bw); $('#detectBar').style.width = bw; }
+      setTxt($('#detectTitle'), det ? `LISTENING ${Math.round(t.detect * 100)} %` : 'DETECT KEY');
+      setTxt($('#detectSub'), det ? 'SING WEITER · KLICK = STOPP' : lastDetected ? `ERKANNT: ${lastDetected}` : '8 SEK SINGEN · SETZT KEY + SCALE');
     }
     curvePh = (curvePh + dt / 4) % 1;
     curves.forEach((c) => { if (isVis(c)) drawCurve(c, +c.dataset.mode, curvePh); });
