@@ -17,11 +17,25 @@ for b in "$WORK/vst3/UBTune.vst3" "$WORK/au/UBTune.component" "$WORK/app/UBTune.
 done
 
 chmod +x "$HERE/scripts/postinstall"
-pkgbuild --root "$WORK/vst3" --identifier de.uniquebaby.ubtune.vst3 --version "$VER" \
+
+# never let Installer "relocate" a bundle to some other copy it finds on disk -> always install to the fixed paths
+noreloc () {
+  pkgbuild --analyze --root "$1" "$2"
+  i=0
+  while /usr/libexec/PlistBuddy -c "Print :$i" "$2" >/dev/null 2>&1; do
+    /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$2"
+    i=$((i+1))
+  done
+  echo "  $2: $i bundle(s) non-relocatable"
+}
+noreloc "$WORK/vst3" "$WORK/vst3.plist"
+noreloc "$WORK/au"   "$WORK/au.plist"
+noreloc "$WORK/app"  "$WORK/app.plist"
+pkgbuild --root "$WORK/vst3" --component-plist "$WORK/vst3.plist" --identifier de.uniquebaby.ubtune.vst3 --version "$VER" \
   --scripts "$HERE/scripts" --install-location "/Library/Audio/Plug-Ins/VST3" "$WORK/pkgs/UBTune-VST3.pkg"
-pkgbuild --root "$WORK/au" --identifier de.uniquebaby.ubtune.au --version "$VER" \
+pkgbuild --root "$WORK/au" --component-plist "$WORK/au.plist" --identifier de.uniquebaby.ubtune.au --version "$VER" \
   --scripts "$HERE/scripts" --install-location "/Library/Audio/Plug-Ins/Components" "$WORK/pkgs/UBTune-AU.pkg"
-pkgbuild --root "$WORK/app" --identifier de.uniquebaby.ubtune.app --version "$VER" \
+pkgbuild --root "$WORK/app" --component-plist "$WORK/app.plist" --identifier de.uniquebaby.ubtune.app --version "$VER" \
   --scripts "$HERE/scripts" --install-location "/Applications" "$WORK/pkgs/UBTune-App.pkg"
 
 sed "s/__VERSION__/$VER/g" "$HERE/distribution.xml" > "$WORK/distribution.xml"

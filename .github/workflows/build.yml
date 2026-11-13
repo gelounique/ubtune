@@ -50,7 +50,7 @@ jobs:
           $vst = "$env:CommonProgramFiles\VST3\UBTune.vst3"
           if (-not (Test-Path "$vst\Contents\x86_64-win\UBTune.vst3")) { Get-Content install.log -Tail 40; throw "VST3 not installed" }
           if (-not (Test-Path "$env:ProgramFiles\UBTune\UBTune.exe")) { throw "App not installed" }
-          ./pv/pluginval.exe --strictness-level 5 --timeout-ms 600000 --validate "$vst"
+          ./pv/pluginval.exe --strictness-level 5 --timeout-ms 600000 --validate "$vst" 2>&1 | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "pluginval on installed VST3 failed" }
           $app = Start-Process -PassThru -FilePath "$env:ProgramFiles\UBTune\UBTune.exe"
           Start-Sleep -Seconds 8
@@ -103,6 +103,7 @@ jobs:
           rm -rf ~/Library/Audio/Plug-Ins/Components/UBTune.component
           hdiutil attach dist/UBTune-macOS.dmg -nobrowse -mountpoint /tmp/ubdmg
           sudo installer -pkg "/tmp/ubdmg/UBTune Installer.pkg" -target /
+          ls -la /Library/Audio/Plug-Ins/VST3 /Library/Audio/Plug-Ins/Components /Applications | grep -i ubtune || true
           test -d /Library/Audio/Plug-Ins/VST3/UBTune.vst3
           test -d /Library/Audio/Plug-Ins/Components/UBTune.component
           test -d /Applications/UBTune.app
