@@ -1,6 +1,6 @@
 # UBTune — by unique & Mbezza
 
-Realtime Pitch Correction · ~3 ms Latenz · Schwarz/Weiß-UI mit lila-blauem Shockwave-Orb · Oktav-Keyboard mit Input/Output-Heatmaps.
+Realtime Pitch Correction · ~3 ms Latenz (tiefe Stimmen bis ~12 ms) · Schwarz/Weiß-UI mit lila-blauem Shockwave-Orb · Oktav-Keyboard mit Input/Output-Heatmaps.
 Entwickelt von **unique & Mbezza** — Gelo Santino Mares · Meron Negash · [uniquebaby.de](https://uniquebaby.de)
 
 **Webseite & Download:** https://ubtune.uniquebaby.de · [Releases](https://github.com/gelounique/ubtune/releases/latest)
@@ -14,8 +14,14 @@ Entwickelt von **unique & Mbezza** — Gelo Santino Mares · Meron Negash · [un
 Skalen: Chromatic, Major, Minor, **Pentatonic Major**, **Pentatonic Minor**, Blues, Harmonic Minor, Dorian, Custom (Tasten am Piano anklicken).
 Regler: **Retune Speed** (groß), **Humanize** (mittel), **Formant**, **Mix** (klein), Transpose (±12 st), Output. **Detect Key** (großer Button) hört 8 s zu und setzt Key + Scale.
 
-## Notenwahl (ab 1.1.1)
-Jede erlaubte Note hat eine feste **Fangzone** bis zur Mitte zum nächsten Skalenton – Zonen überlappen nie. Um jede Grenze liegt eine **Totzone**: gewechselt wird erst, wenn die geglättete Tonhöhe (Vibrato rausgerechnet) klar drüber ist und eine Mindestzeit bleibt – oder sofort bei echten Sprüngen (> 1 Halbton tief in einer anderen Zone). Dazu ein Oktavfehler-Schutz in der Erkennung. `tests/chatter_test.cpp` misst das: 184 → 12 Wechsel bei gehaltenen Tönen mit Vibrato direkt auf der Grenze.
+## Notenwahl (1.1.2)
+- **Fangzonen ohne Überlappung:** jede erlaubte Note gehört bis zur Mitte zum nächsten Skalenton, um jede Grenze liegt eine **Totzone** (Vibrato wird rausgemittelt).
+- **Range-Lock in der Erkennung:** die Tonhöhenerkennung bleibt in der Oktave, in der du gerade singst (Oktavfehler auf echten Stimmen 5,3 % → 1,4 %), Kandidaten-Auswahl statt erstem Treffer, Stimmhaft-Hysterese, Median über 5 Frames.
+- **Mindest-Notenlänge** (SMOOTH 120 ms · PRO 90 ms · ROBOTIC 60 ms): keine 20-ms-Flatternoten mehr – Noten < 60 ms auf echten Stimmen 62 % → 18 %, Notenwechsel/s halbiert.
+- **Glides gehen durch:** während du slidest, zieht UBTune nicht zur alten Note zurück; beim Landen wird **einmal** die Note gewählt, auf der du wirklich ankommst (keine Treppen bei Scoops).
+- **Weniger kratzig:** Pitch-Marks per Kreuzkorrelation statt Spitzenwert, Grains im festen Ein-Perioden-Fenster → 1:1-Wiedergabe der Stimme ohne doppelte/verlorene Perioden (Klangtreue bei 0 % Korrektur 5,9 → 10,6 dB SNR auf echten Aufnahmen).
+
+Tests: `tests/chatter_test.cpp` (gehaltene Töne auf der Grenze), `tests/voice_run.cpp` + `tests/voice_eval.py` (echte Aufnahmen gegen librosa-pYIN: Oktavfehler, Notenwechsel, Artefakte, Quantisierung).
 
 ## Formate
 - **Windows 10/11 x64:** VST3 + Standalone — `UBTune-Windows-Setup.exe` (Installer + Deinstaller)
@@ -23,7 +29,7 @@ Jede erlaubte Note hat eine feste **Fangzone** bis zur Mitte zum nächsten Skale
 - Läuft in FL Studio, Ableton Live, Logic Pro, GarageBand, Cubase, Studio One, Reaper, Bitwig … (Pro Tools bräuchte AAX — nicht enthalten)
 
 ## Technik
-- `plugin/source/dsp/UBTuneEngine.h` — reine C++17-Engine: YIN-Pitch-Detection (dezimiert + Full-Rate-Refinement) → Notenlogik mit Hysterese/Retune/Humanize → Low-Latency-TD-PSOLA: jedes Grain wird erst im Moment der Ausgabe aus der zuletzt gesungenen Periode gelesen → echte Verzögerung ≈ 1–5 ms (typisch ~3 ms), der DAW werden 2 ms gemeldet. Formant ±6 st, automatische Pegel-Angleichung.
+- `plugin/source/dsp/UBTuneEngine.h` — reine C++17-Engine: YIN-Pitch-Detection (dezimiert + Full-Rate-Refinement) → Notenlogik mit Hysterese/Retune/Humanize → Low-Latency-TD-PSOLA: jedes Grain wird erst im Moment der Ausgabe aus der zuletzt gesungenen Periode gelesen → echte Verzögerung ≈ 1–5 ms in normaler Gesangslage, bei sehr tiefen Stimmen bis ~12 ms (eine Periode); der DAW werden 2 ms gemeldet. Formant ±6 st, automatische Pegel-Angleichung.
 - `plugin/source/ui/` — Shockwave-Orb (1500 Staub-Partikel mit Erosion + Trails, Nebel-Kern, Shockwaves bei Notenwechseln), Oktav-Keyboard mit Heatmaps, segmentierte Regler, Theme (Instrument Sans + JetBrains Mono).
 - `tests/` — `engine_test.cpp` (synthetische Stimme → Engine → WAV), `analyze.py` (misst Cent-Abweichung), `snapshot.cpp` (rendert die GUI als PNG), `stress.cpp` (Automation-Stress mit offenem Editor).
 - `web/` — Webseite (GitHub Pages, Branch `gh-pages`) inkl. Live-Browser-Demo.

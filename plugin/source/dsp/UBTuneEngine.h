@@ -7,7 +7,10 @@
 //                     cut from the most recent *already sung* pitch period, so the audio delay is only
 //                     a fraction of one period (~1-6 ms) instead of a fixed worst-case buffer.
 //  - Note logic:      scale masks (incl. Pentatonic Major/Minor), hysteresis, retune speed,
-//                     humanize (keeps vibrato), three characters: SMOOTH / PRO / T-PAIN
+//                     humanize (keeps vibrato), three characters: SMOOTH / PRO / ROBOTIC.
+//                     Notes are chosen like a singer hears them: capture zones with a dead band,
+//                     a minimum note length (no flutter), glides pass through, and a freshly
+//                     chosen note may settle once onto the note you actually land on.
 #pragma once
 
 #include <algorithm>
@@ -78,13 +81,14 @@ struct Params
     float formant     = 0.0f;     // semitones, -6..+6
     float transpose   = 0.0f;     // semitones, -12..+12
     float mix         = 1.0f;     // 0..1
+    float amount      = 1.0f;     // correction strength 0..1
     float outGain     = 1.0f;     // linear
 };
 
 class Engine
 {
 public:
-    static constexpr double kMinF = 70.0, kMaxF = 1100.0;
+    static constexpr double kMinF = 55.0, kMaxF = 1100.0;
     static constexpr float  kFormantRange = 6.0f;
     static constexpr double kReportedLatencyMs = 2.0;   // what we tell the host (typical real delay ~1-5 ms)
 
@@ -110,6 +114,7 @@ public:
         tauMinD = std::max (2, (int) std::floor (fsd / kMaxF));
         winD = tauMaxD + 8;
         hopD = std::max (8, (int) std::round (0.0027 * fsd)); // ~2.7 ms analysis hop
+        rmsDecay = std::exp (-(hopD * D / fs) / 1.5);         // level reference forgets over ~1.5 s
         Pmax = fs / kMinF;
         Punv = std::round (0.004 * fs);
         refineWin = std::min ((int) (0.016 * fs), 4096);
@@ -153,11 +158,12 @@ public:
         std::fill (mono.begin(), mono.end(), 0.0f);
         std::fill (dec.begin(), dec.end(), 0.0f);
         n = 0; decN = 0;
-        raw[0] = raw[1] = raw[2] = Frame{}; nRaw = 0;
+        for (auto& r : raw) r = Frame{};
+        nRaw = 0; stablePeriod = 0.0; rmsPeak = 0.0; unvoicedFrames = 0;
         cur = Frame{};
         numGrains = 0;
-        nextMark = 0.0; lastMark = 0.0; markValid = false; wasVoiced = false; polarity = 1.0f; lastHop = 200.0;
-        curNote = -1; shift = 0.0; center = 0.0; decPitch = 0.0; pendSlow = pendFast = 0.0; pendSlowNote = -1; delaySm = 0.0; eIn = eOut = 0.0; comp = 1.0;
+        nextMark = 0.0; lastMark = 0.0; delayCur = 0.0; markCount = 0; markValid = false; wasVoiced = false; polarity = 1.0f; lastHop = 200.0;
+        curNote = -1; shift = 0.0; center = 0.0; decPitch = 0.0; pendSlow = pendFast = 0.0; pendSlowNote = -1; slideVel = slideAmt = 0.0; sinceSwitch = 1.0; sinceOnset = 1.0; pendRefine = 0.0; provisional = false; lastNote = -1; sliding = false; delaySm = 0.0; eIn = eOut = 0.0; comp = 1.0;
         tInputMidi = -1.0f; tTargetNote = -1; tCorrection = 0.0f; tLevel = 0.0f; tDelayMs = 0.0f;
     }
 
@@ -283,20 +289,40 @@ private:
                 run += diff[(size_t) tau];
                 cmnd[(size_t) tau] = run > 0 ? (float) (diff[(size_t) tau] * tau / run) : 1.0f;
             }
-            int best = -1;
-            for (int tau = tauMinD; tau < tauMaxD; ++tau)
-                if (cmnd[(size_t) tau] < 0.17f)
-                {
-                    while (tau + 1 < tauMaxD && cmnd[(size_t) tau + 1] < cmnd[(size_t) tau]) ++tau;
-                    best = tau; break;
-                }
-            bool voiced = best > 0;
-            if (! voiced)
+            // ---- candidate selection (robust against octave errors) ----
+            // local minima of the normalised difference; global minimum gives the periodicity
+            int nCand = 0; int candT[32]; float candV[32];
+            float gmin = 1e9f; int gtau = -1;
+            for (int tau = tauMinD; tau < tauMaxD && nCand < 32; ++tau)
             {
-                float mn = 1e9f;
-                for (int tau = tauMinD; tau < tauMaxD; ++tau)
-                    if (cmnd[(size_t) tau] < mn) { mn = cmnd[(size_t) tau]; best = tau; }
-                voiced = mn < 0.28f;
+                const float v = cmnd[(size_t) tau];
+                if (v < gmin) { gmin = v; gtau = tau; }
+                if (v < 0.6f && v <= cmnd[(size_t) tau - 1] && v <= cmnd[(size_t) tau + 1]) { candT[nCand] = tau; candV[nCand] = v; ++nCand; }
+            }
+            // voicing with hysteresis: harder to become voiced than to stay voiced
+            const bool wasVoiced = cur.voiced;
+            bool voiced = gtau > 0 && gmin < (wasVoiced ? 0.33f : 0.22f) && rms > 0.03f * rmsPeak;
+            int best = -1;
+            if (voiced)
+            {
+                // the SHORTEST lag that is nearly as periodic as the best one -> no octave-down errors
+                const float thr = std::max (0.12f, gmin * 1.6f + 0.05f);
+                for (int c = 0; c < nCand; ++c) if (candV[c] < thr) { best = candT[c]; break; }
+                if (best < 0) best = gtau;
+                // continuity: if this jumps an octave against the stable pitch, keep the stable octave
+                // when that lag is (almost) as good -> the detector stays in the range you're singing in
+                if (wasVoiced && stablePeriod > 0)
+                {
+                    const double prevT = stablePeriod / D;
+                    const double r = best / prevT;
+                    if (std::abs (r - 2.0) < 0.15 || std::abs (r - 0.5) < 0.04 || std::abs (r - 3.0) < 0.2 || std::abs (r - 1.0 / 3.0) < 0.03)
+                    {
+                        int alt = -1; float altV = 1e9f;
+                        for (int c = 0; c < nCand; ++c)
+                            if (std::abs (std::log2 (candT[c] / prevT)) < 0.12 && candV[c] < altV) { alt = candT[c]; altV = candV[c]; }
+                        if (alt > 0 && altV < cmnd[(size_t) best] + 0.10f) best = alt;
+                    }
+                }
             }
             if (voiced && best > 1 && best < tauMaxD)
             {
@@ -307,36 +333,24 @@ private:
                 f.voiced = f.period > fs / kMaxF * 0.9 && f.period < fs / kMinF * 1.1;
             }
         }
+        rmsPeak = std::max ((double) rms, rmsPeak * rmsDecay);
 
-        // octave guard: a sudden x2 / x0.5 jump against the last stable pitch is almost always a
-        // detector error -> keep the previous octave if that lag is also a good YIN candidate
-        if (f.voiced && cur.voiced && cur.period > 0)
-        {
-            const double r = f.period / cur.period;
-            for (double k : { 2.0, 0.5 })
-                if (std::abs (r / k - 1.0) < 0.06)
-                {
-                    const double alt = f.period / k;               // period in the old octave
-                    const int altD = (int) std::lround (alt / D);
-                    if (altD > tauMinD && altD < tauMaxD && cmnd[(size_t) altD] < 0.30f)
-                        f.period = refine (alt);
-                }
-        }
-
-        // 3-frame median (octave-glitch killer), 2-of-3 voicing
-        raw[0] = raw[1]; raw[1] = raw[2]; raw[2] = f; ++nRaw;
+        // smoothing: 2-of-3 voicing, period = median of the voiced frames among the last 5 (log domain)
+        for (int k = 0; k < 4; ++k) raw[k] = raw[k + 1];
+        raw[4] = f; ++nRaw;
         Frame o = f;
-        const int vc = (int) raw[0].voiced + (int) raw[1].voiced + (int) raw[2].voiced;
-        o.voiced = (nRaw >= 3) && vc >= 2;
+        const int vc3 = (int) raw[2].voiced + (int) raw[3].voiced + (int) raw[4].voiced;
+        o.voiced = (nRaw >= 3) && vc3 >= 2;
         if (o.voiced)
         {
-            if (vc == 3)
-            {
-                const double a = raw[0].period, b = raw[1].period, c = raw[2].period;
-                o.period = std::max (std::min (a, b), std::min (std::max (a, b), c)); // median of 3
-            }
-            else o.period = f.voiced ? f.period : raw[1].period;
+            double pv[5]; int np = 0;
+            for (int k = 0; k < 5; ++k) if (raw[k].voiced) pv[np++] = raw[k].period;
+            for (int i = 1; i < np; ++i) for (int j = i; j > 0 && pv[j - 1] > pv[j]; --j) std::swap (pv[j - 1], pv[j]);
+            o.period = np > 0 ? pv[np / 2] : f.period;
+            if (np == 0) o.voiced = false;
         }
+        if (o.voiced) { stablePeriod = o.period; unvoicedFrames = 0; }
+        else if (++unvoicedFrames > 15) stablePeriod = 0.0;   // ~40 ms of silence: forget the range
         cur = o;
 
         if (o.voiced)
@@ -415,26 +429,70 @@ private:
         tDetectProgress = -1.0f;
     }
 
-    // ---------------- pitch marks (one per period, on the waveform peak) ----------------
+    // ---------------- pitch marks (one per period) ----------------
+    // First mark at onset = waveform peak. Every following mark is found by cross-correlating the
+    // last full period with the candidate period (robust on rough / breathy voices), so the marks
+    // follow the real period-to-period spacing of the voice.
+    void pushMark (double m)
+    {
+        marks[(size_t) (markCount % kMarks)] = m;
+        ++markCount;
+        lastMark = m;
+    }
+    double markAt (int64_t idx) const { return marks[(size_t) (idx % kMarks)]; }
+
     void trackMarks()
     {
         if (! cur.voiced) { markValid = false; return; }
         const double P = cur.period;
-        const double guard = std::ceil (0.13 * P) + 1.0;
+        const double guard = std::ceil (0.16 * P) + 2.0;
         if (! markValid || lastMark < (double) n - 3.0 * P)
         {
-            if ((double) n < P + guard + 2) return;
-            lastMark = peakIn ((double) n - P - guard, (double) n - guard, true);
+            if ((double) n < 2.0 * P + guard + 2) return;
+            markCount = 0;
+            pushMark (peakIn ((double) n - P - guard, (double) n - guard, true));
             markValid = true;
             return;
         }
         while (lastMark + P + guard <= (double) n)
         {
             const double cand = lastMark + P;
-            double m = peakIn (cand - 0.12 * P, cand + 0.12 * P, false);
-            if (m <= lastMark + 0.5 * P) m = cand;
-            lastMark = m;
+            double m = corrMark (lastMark, cand, P);
+            if (m <= lastMark + 0.6 * P || m >= lastMark + 1.5 * P) m = cand;
+            pushMark (m);
         }
+    }
+
+    /** Best position near cand whose preceding period looks most like the period before prev. */
+    double corrMark (double prev, double cand, double P)
+    {
+        const int L = std::max (16, std::min ((int) std::lround (P), 768));
+        const int R = std::max (2, (int) std::lround (0.14 * P));
+        const int64_t ip = (int64_t) std::lround (prev), ic = (int64_t) std::lround (cand);
+        double best = -1e30; int bk = 0; double prevV = -1e30;
+        double bestL = 0, bestR = 0;
+        const int step = L > 256 ? 2 : 1;
+        for (int k = -R; k <= R; ++k)
+        {
+            double xy = 0, yy = 0;
+            for (int j = 0; j < L; j += step)
+            {
+                const double a = mono[(size_t) ((ip - L + j) & ringMask)];
+                const double b = mono[(size_t) ((ic + k - L + j) & ringMask)];
+                xy += a * b; yy += b * b;
+            }
+            const double v = xy / std::sqrt (yy + 1e-12);
+            if (v > best) { best = v; bk = k; bestL = prevV; bestR = -1e30; }
+            else if (k == bk + 1) bestR = v;
+            prevV = v;
+        }
+        double frac = 0.0;
+        if (bestL > -1e29 && bestR > -1e29)
+        {
+            const double den = bestL - 2 * best + bestR;
+            if (std::abs (den) > 1e-12) frac = std::clamp (0.5 * (bestL - bestR) / den, -0.5, 0.5);
+        }
+        return (double) ic + bk + frac;
     }
 
     double peakIn (double a, double b, bool choosePolarity)
@@ -477,14 +535,14 @@ private:
     // neighbouring allowed notes, so zones never overlap. Around every boundary sits a dead band:
     // we only leave the current note when the *smoothed* pitch (vibrato averaged out) is clearly past
     // the boundary for a minimum time, or when the raw pitch is deep inside the new note (real jump).
-    struct ZoneCfg { double tauDec, margin, hold, fastMargin, fastHold; };
+    struct ZoneCfg { double tauDec, margin, hold, fastMargin, fastHold, minDur, slideThr; };
     ZoneCfg zoneCfg() const
     {
         switch (prm.mode)
         {
-            case Mode::Smooth: return { 0.090, 0.25, 0.060, 0.40, 0.035 };
-            case Mode::Pro:    return { 0.075, 0.22, 0.045, 0.40, 0.018 };
-            default:           return { 0.065, 0.20, 0.030, 0.40, 0.012 };
+            case Mode::Smooth: return { 0.090, 0.25, 0.060, 0.40, 0.035, 0.120, 12.0 };
+            case Mode::Pro:    return { 0.075, 0.22, 0.045, 0.40, 0.018, 0.090, 20.0 };
+            default:           return { 0.065, 0.20, 0.030, 0.40, 0.012, 0.060, 1e9 };
         }
     }
 
@@ -500,14 +558,57 @@ private:
     void decideNote (double midi, double dt, bool onset)
     {
         const ZoneCfg z = zoneCfg();
-        if (onset) decPitch = midi;
+        const double prevDec = decPitch;
+        if (onset) { decPitch = midi; slideVel = 0.0; }
         else decPitch += (midi - decPitch) * (1.0 - std::exp (-dt / z.tauDec));
+        if (! onset && dt > 0) slideVel += ((decPitch - prevDec) / dt - slideVel) * (1.0 - std::exp (-dt / 0.03));
+        sinceSwitch += dt;
+        const bool wasSliding = sliding;
+        sliding = std::abs (slideVel) > z.slideThr;
 
+        if (onset) sinceOnset = 0.0; else sinceOnset += dt;
         if (onset || curNote < 0 || ! allowedIn (prm.mask, curNote))
         {
-            curNote = nearestAllowed (decPitch);
-            pendSlow = pendFast = 0.0; pendSlowNote = -1;
+            curNote = nearestAllowed (decPitch); lastNote = -1;
+            pendSlow = pendFast = 0.0; pendSlowNote = -1; sinceSwitch = 0.0; provisional = true; pendRefine = 0.0;
             return;
+        }
+        if (provisional && sinceSwitch < 0.25 && sinceSwitch > 0.03 && ! sliding)
+        {
+            // a quickly chosen note is only provisional: once the voice has settled, move ONCE to the
+            // note it actually holds (averaged pitch, no hysteresis) - kills scoop "staircases"
+            const int c = nearestAllowed (decPitch);
+            if (c != curNote && c != lastNote && pastBoundary (decPitch, curNote, c) > 0.15) pendRefine += dt; else pendRefine = 0.0;
+            if (pendRefine >= 0.06)
+            {
+                curNote = c; decPitch = midi; provisional = false; pendRefine = 0.0;
+                pendSlow = pendFast = 0.0; pendSlowNote = -1;
+                return;
+            }
+        }
+        else if (sinceSwitch >= 0.25) provisional = false;
+        if (wasSliding && ! sliding)
+        {
+            // landing after a scoop / glide: take the note you actually landed on (no hysteresis)
+            const int c = nearestAllowed (midi);
+            if (c != curNote && pastBoundary (midi, curNote, c) > 0.08)
+            {
+                lastNote = curNote; curNote = c; decPitch = midi; provisional = true; pendRefine = 0.0;
+                pendSlow = pendFast = 0.0; pendSlowNote = -1; sinceSwitch = 0.0;
+                return;
+            }
+        }
+        if (sinceOnset < 0.08 && ! sliding)
+        {
+            // the first frames after an onset are still settling: if the voice lands clearly
+            // elsewhere (> 1 semitone past the boundary), re-pick at once instead of waiting out minDur
+            const int c = nearestAllowed (midi);
+            if (c != curNote && pastBoundary (midi, curNote, c) > 1.0)
+            {
+                lastNote = curNote; curNote = c; decPitch = midi; provisional = true; pendRefine = 0.0;
+                pendSlow = pendFast = 0.0; pendSlowNote = -1; sinceSwitch = 0.0;
+                return;
+            }
         }
         const int candSlow = nearestAllowed (decPitch);
         const int candFast = nearestAllowed (midi);
@@ -517,7 +618,10 @@ private:
         // Way past the boundary (> 1 semitone, wider than any vibrato) -> switch at once;
         // otherwise it has to stay away from the current note for fastHold.
         const double pastFast = candFast != curNote ? pastBoundary (midi, curNote, candFast) : -1.0;
-        if (pastFast > 1.0) target = candFast;
+        // timers keep running while a note is young / a glide is in flight; only the switch itself waits
+        const bool canSwitch = sinceSwitch >= z.minDur && ! sliding;
+        if (pastFast > 2.0 && ! sliding) target = candFast;
+        else if (pastFast > 1.0) target = candFast;
         else if (pastFast > z.fastMargin)
         {
             pendFast += dt;
@@ -536,7 +640,17 @@ private:
 
         if (target >= 0)
         {
-            curNote = target;
+            // real leaps (> 2 st past the boundary) go as soon as the glide has settled;
+            // everything closer has to respect minDur (no flutter between neighbours)
+            const bool leap = pastFast > 2.0 && pastBoundary (decPitch, curNote, target) > 1.0;
+            if (leap ? (sliding && sinceSwitch < 0.15) : ! canSwitch) target = -1;
+        }
+
+        if (target >= 0)
+        {
+            provisional = true; pendRefine = 0.0;
+            lastNote = curNote; curNote = target;
+            sinceSwitch = 0.0;
             pendSlowNote = -1; pendSlow = pendFast = 0.0;
             decPitch = midi;
         }
@@ -553,7 +667,16 @@ private:
 
         const double h = std::clamp ((double) prm.humanize, 0.0, 1.0);
         const double eff = midi + (center - midi) * h;
-        const double desired = curNote - eff;
+        // while you slide (SMOOTH / PRO) the correction steps back, so glides stay natural
+        slideAmt += ((sliding ? 1.0 : 0.0) - slideAmt) * (1.0 - std::exp (-dt / (sliding ? 0.02 : 0.06)));
+        // voice already far inside another note's zone (glide not yet decided): don't drag it back
+        double away = 0.0;
+        if (prm.mode != Mode::Robotic)
+        {
+            const int nn = nearestAllowed (midi);
+            if (nn != curNote) away = std::clamp (pastBoundary (midi, curNote, nn) - 1.0, 0.0, 1.0);
+        }
+        const double desired = (curNote - eff) * std::clamp ((double) prm.amount, 0.0, 1.0) * (1.0 - 0.85 * slideAmt) * (1.0 - away);
 
         double tauR = std::max (0.0, (double) prm.retuneMs) / 1000.0;
         if (prm.mode == Mode::Robotic) tauR = std::min (tauR, 0.004); // robotic = instant snap
@@ -563,6 +686,10 @@ private:
     }
 
     // ---------------- low-latency PSOLA: grains are created just in time ----------------
+    // Each output grain is centred on an output mark t; its source is the confirmed input mark closest
+    // to t - delay. The delay is held inside a fixed one-period window [dLo, dLo + P]: at 0 % correction
+    // output marks advance by exactly the real mark spacing, so the voice is reproduced 1:1 (no repeated
+    // or dropped periods). Periods are only repeated / skipped where the pitch really gets shifted.
     void spawnGrains (double fF)
     {
         const double t = (double) n;
@@ -570,38 +697,75 @@ private:
 
         for (int guard = 0; guard < 16 && numGrains < kMaxGrains; ++guard)
         {
-            const bool voiced = cur.voiced && markValid;
-            const double P = voiced ? cur.period : Punv;
-            const double H = P / fF;
+            const bool voiced = cur.voiced && markValid && markCount > 0;
+            const double Pdet = voiced ? cur.period : Punv;
+            const double H = Pdet / fF;
             if (nextMark - H > t) break;
 
-            // causality: reading src + (tau-dst)*fF must stay <= tau-2 for the whole grain
-            const double limit = nextMark - H * std::abs (fF - 1.0) - 3.0;
-            double src, hop = P;
+            const double limit = nextMark - H * std::abs (fF - 1.0) - 3.0;   // causality inside the grain
+            double src, hop, Hs = H;
             if (voiced)
             {
                 const bool onset = ! wasVoiced;
-                src = lastMark;
-                while (src > limit) src -= P;
+                const double dLo = H * std::abs (fF - 1.0) + 3.0;
+                const double dHi = dLo + Pdet * 1.05 + std::ceil (0.16 * Pdet) + H;
+                const double d = std::clamp (delayCur, dLo, dHi);
+                const double a = nextMark - d;
+                // nearest confirmed mark to a, that is still causal
+                int64_t bi = -1; double bd = 1e30;
+                const int64_t first = std::max<int64_t> (0, markCount - kMarks + 1);
+                for (int64_t k = markCount - 1; k >= first; --k)
+                {
+                    const double m = markAt (k);
+                    if (m > limit) continue;
+                    const double dist = std::abs (m - a);
+                    if (dist < bd) { bd = dist; bi = k; }
+                    if (m < a - 2.0 * Pdet) break;
+                }
+                if (bi < 0) { bi = markCount - 1; }
+                src = markAt (bi);
+                while (src > limit) src -= Pdet;
+                double Ploc = Pdet, Pavg = Pdet;
+                if (bi > 0 && bi - 1 >= first)
+                {
+                    Ploc = std::clamp (src - markAt (bi - 1), 0.75 * Pdet, 1.33 * Pdet);
+                    const int64_t back = std::min<int64_t> (prm.mode == Mode::Robotic ? 8 : 4, bi - first);
+                    const double avg = (src - markAt (bi - back)) / (double) back;
+                    if (avg > 0.8 * Pdet && avg < 1.25 * Pdet) Pavg = avg;
+                }
+                Hs = Ploc / fF;
 
-                const double midi = 69.0 + 12.0 * std::log2 (fs / P / 440.0);
-                const double s = updateShift (midi, lastHop / fs, onset);
-                const double ratio = std::pow (2.0, (s + prm.transpose) / 12.0);
-                hop = P / std::clamp (ratio, 0.25, 4.0);
+                // pitch + timing from the real mark spacing: exact (no drift) and smooth (no jitter);
+                // humanize decides how much of the voice's own period-to-period jitter survives
+                const double midi = 69.0 + 12.0 * std::log2 (fs / Pavg / 440.0);
+                const double sh = updateShift (midi, lastHop / fs, onset);
+                const double ratio = std::pow (2.0, (sh + prm.transpose) / 12.0);
+                // ROBOTIC: averaged period -> dead-steady pitch; otherwise the real local period -> 1:1 voice texture
+                const double Pbase = prm.mode == Mode::Robotic ? Pavg : Ploc;
+                hop = Pbase / std::clamp (ratio, 0.25, 4.0);
                 lastHop = hop;
                 wasVoiced = true;
                 tTargetNote = curNote;
-                tCorrection = (float) s;
+                tCorrection = (float) sh;
             }
             else
             {
-                src = std::min (limit, nextMark - 0.5 * Punv);
+                // keep the delay continuous through consonants / breaths, drift slowly to the minimum
+                const double dTarget = H * std::abs (fF - 1.0) + 3.0 + 0.5 * Punv;
+                delayCur += (dTarget - delayCur) * 0.05;
+                src = std::min (limit, nextMark - delayCur);
+                hop = Punv;
                 if (wasVoiced) { tTargetNote = -1; tCorrection = 0.0f; }
                 wasVoiced = false;
             }
 
+           #ifdef UBT_DEBUG
+            if (voiced && dbgPrevVoiced) { const double jump = (src - dbgPrevSrc) - dbgPrevHop; dbgGrains++; if (std::abs (jump) > 0.25 * Pdet) dbgEvents++; }
+            dbgPrevSrc = src; dbgPrevHop = hop; dbgPrevVoiced = voiced;
+           #endif
+            delayCur = nextMark - src;
             Grain& g = grains[numGrains++];
-            g.src = src; g.dst = nextMark; g.invH = 1.0 / H; g.fF = fF; g.gain = std::min (hop / H, 2.0);
+            g.src = src; g.dst = nextMark; g.invH = 1.0 / Hs; g.fF = fF; g.gain = std::min (hop / Hs, 2.0);
             delaySm += ((nextMark - src) - delaySm) * 0.05;
             nextMark += hop;
         }
@@ -621,17 +785,29 @@ private:
     std::vector<float> mono, dec, fir, diff, cmnd;
     int64_t n = 0, decN = 0;
 
-    Frame raw[3] {}, cur {};
+    Frame raw[5] {}, cur {};
+    double stablePeriod = 0.0, rmsPeak = 0.0, rmsDecay = 0.999;
+    int unvoicedFrames = 0;
     int64_t nRaw = 0;
 
     Grain grains[kMaxGrains] {};
     int numGrains = 0;
-    double nextMark = 0, lastMark = 0, lastHop = 200, delaySm = 0;
+    double nextMark = 0, lastMark = 0, lastHop = 200, delaySm = 0, delayCur = 0;
+    static constexpr int kMarks = 64;
+    std::array<double, kMarks> marks {};
+    int64_t markCount = 0;
+   #ifdef UBT_DEBUG
+public:
+    long dbgGrains = 0, dbgEvents = 0; double dbgPrevSrc = 0, dbgPrevHop = 0; bool dbgPrevVoiced = false;
+private:
+   #endif
     bool markValid = false, wasVoiced = false;
     float polarity = 1.0f;
     int curNote = -1;
     double shift = 0, center = 0, decPitch = 0, pendSlow = 0, pendFast = 0;
     int pendSlowNote = -1;
+    double slideVel = 0, slideAmt = 0, sinceSwitch = 1.0, sinceOnset = 1.0, pendRefine = 0.0; bool provisional = false; int lastNote = -1;
+    bool sliding = false;
     double eIn = 0, eOut = 0, comp = 1.0, aLvl = 0.0003, aComp = 0.0004;
 
     bool detecting = false;
