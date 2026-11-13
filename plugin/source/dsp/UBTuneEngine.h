@@ -157,7 +157,7 @@ public:
         cur = Frame{};
         numGrains = 0;
         nextMark = 0.0; lastMark = 0.0; markValid = false; wasVoiced = false; polarity = 1.0f; lastHop = 200.0;
-        curNote = -1; shift = 0.0; center = 0.0; delaySm = 0.0; eIn = eOut = 0.0; comp = 1.0;
+        curNote = -1; shift = 0.0; center = 0.0; decPitch = 0.0; pendSlow = pendFast = 0.0; pendSlowNote = -1; delaySm = 0.0; eIn = eOut = 0.0; comp = 1.0;
         tInputMidi = -1.0f; tTargetNote = -1; tCorrection = 0.0f; tLevel = 0.0f; tDelayMs = 0.0f;
     }
 
@@ -306,6 +306,21 @@ private:
                 f.period = refine (tau * D);
                 f.voiced = f.period > fs / kMaxF * 0.9 && f.period < fs / kMinF * 1.1;
             }
+        }
+
+        // octave guard: a sudden x2 / x0.5 jump against the last stable pitch is almost always a
+        // detector error -> keep the previous octave if that lag is also a good YIN candidate
+        if (f.voiced && cur.voiced && cur.period > 0)
+        {
+            const double r = f.period / cur.period;
+            for (double k : { 2.0, 0.5 })
+                if (std::abs (r / k - 1.0) < 0.06)
+                {
+                    const double alt = f.period / k;               // period in the old octave
+                    const int altD = (int) std::lround (alt / D);
+                    if (altD > tauMinD && altD < tauMaxD && cmnd[(size_t) altD] < 0.30f)
+                        f.period = refine (alt);
+                }
         }
 
         // 3-frame median (octave-glitch killer), 2-of-3 voicing
@@ -458,24 +473,79 @@ private:
         return best;
     }
 
-    double hysteresis() const
+    // Note decision ("capture zones"): every allowed note owns the range up to the midpoint to its
+    // neighbouring allowed notes, so zones never overlap. Around every boundary sits a dead band:
+    // we only leave the current note when the *smoothed* pitch (vibrato averaged out) is clearly past
+    // the boundary for a minimum time, or when the raw pitch is deep inside the new note (real jump).
+    struct ZoneCfg { double tauDec, margin, hold, fastMargin, fastHold; };
+    ZoneCfg zoneCfg() const
     {
         switch (prm.mode)
         {
-            case Mode::Smooth: return 0.22;
-            case Mode::Pro:    return 0.12;
-            default:           return 0.03;
+            case Mode::Smooth: return { 0.090, 0.25, 0.060, 0.40, 0.035 };
+            case Mode::Pro:    return { 0.075, 0.22, 0.045, 0.40, 0.018 };
+            default:           return { 0.065, 0.20, 0.030, 0.40, 0.012 };
+        }
+    }
+
+    static bool allowedIn (uint16_t mask, int note) { return (mask >> (((note % 12) + 12) % 12)) & 1; }
+
+    /** How far (semitones) pitch m is past the boundary between curNote and cand, towards cand. */
+    static double pastBoundary (double m, int from, int to)
+    {
+        const double boundary = 0.5 * (from + to);
+        return to > from ? m - boundary : boundary - m;
+    }
+
+    void decideNote (double midi, double dt, bool onset)
+    {
+        const ZoneCfg z = zoneCfg();
+        if (onset) decPitch = midi;
+        else decPitch += (midi - decPitch) * (1.0 - std::exp (-dt / z.tauDec));
+
+        if (onset || curNote < 0 || ! allowedIn (prm.mask, curNote))
+        {
+            curNote = nearestAllowed (decPitch);
+            pendSlow = pendFast = 0.0; pendSlowNote = -1;
+            return;
+        }
+        const int candSlow = nearestAllowed (decPitch);
+        const int candFast = nearestAllowed (midi);
+        int target = -1;
+
+        // fast path: raw pitch sits deep inside another note's zone (a real jump / slide).
+        // Way past the boundary (> 1 semitone, wider than any vibrato) -> switch at once;
+        // otherwise it has to stay away from the current note for fastHold.
+        const double pastFast = candFast != curNote ? pastBoundary (midi, curNote, candFast) : -1.0;
+        if (pastFast > 1.0) target = candFast;
+        else if (pastFast > z.fastMargin)
+        {
+            pendFast += dt;
+            if (pendFast >= z.fastHold) target = candFast;
+        }
+        else pendFast = 0.0;
+
+        // slow path: averaged pitch (vibrato removed) clearly over the boundary for a while
+        if (target < 0 && candSlow != curNote && pastBoundary (decPitch, curNote, candSlow) > z.margin)
+        {
+            if (pendSlowNote != candSlow) { pendSlowNote = candSlow; pendSlow = 0.0; }
+            pendSlow += dt;
+            if (pendSlow >= z.hold) target = candSlow;
+        }
+        else if (target < 0) { pendSlowNote = -1; pendSlow = 0.0; }
+
+        if (target >= 0)
+        {
+            curNote = target;
+            pendSlowNote = -1; pendSlow = pendFast = 0.0;
+            decPitch = midi;
         }
     }
 
     double updateShift (double midi, double dt, bool onset)
     {
-        const int cand = nearestAllowed (midi);
         const int prevNote = curNote;
-        if (onset || curNote < 0 || ! (prm.mask & (1u << (((curNote % 12) + 12) % 12))))
-            curNote = cand;
-        else if (cand != curNote && std::abs (midi - curNote) - std::abs (midi - cand) > hysteresis())
-            curNote = cand;
+        decideNote (midi, dt, onset);
 
         const double tauC = 0.12;
         if (onset || curNote != prevNote || std::abs (center - midi) > 1.0) center = midi;
@@ -560,7 +630,8 @@ private:
     bool markValid = false, wasVoiced = false;
     float polarity = 1.0f;
     int curNote = -1;
-    double shift = 0, center = 0;
+    double shift = 0, center = 0, decPitch = 0, pendSlow = 0, pendFast = 0;
+    int pendSlowNote = -1;
     double eIn = 0, eOut = 0, comp = 1.0, aLvl = 0.0003, aComp = 0.0004;
 
     bool detecting = false;

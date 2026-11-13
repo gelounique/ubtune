@@ -32,7 +32,7 @@ class Engine {
     this.n = 0; this.decN = 0; this.raw = [{ period: 0, voiced: false, rms: 0 }, { period: 0, voiced: false, rms: 0 }, { period: 0, voiced: false, rms: 0 }]; this.nRaw = 0;
     this.cur = { period: 0, voiced: false, rms: 0 }; this.numGrains = 0;
     this.nextMark = 0; this.lastMark = 0; this.markValid = false; this.wasVoiced = false; this.polarity = 1; this.lastHop = 200;
-    this.curNote = -1; this.shift = 0; this.center = 0; this.delaySm = 0; this.eIn = 0; this.eOut = 0; this.comp = 1;
+    this.curNote = -1; this.shift = 0; this.center = 0; this.decPitch = 0; this.pendSlow = 0; this.pendFast = 0; this.pendSlowNote = -1; this.delaySm = 0; this.eIn = 0; this.eOut = 0; this.comp = 1;
   }
 
   process(chs, len) {
@@ -88,6 +88,10 @@ class Engine {
         f.period = this.refine((best + (Math.abs(den) > 1e-12 ? 0.5 * (a - c) / den : 0)) * this.D);
         f.voiced = f.period > this.fs / MAX_F * 0.9 && f.period < this.fs / MIN_F * 1.1;
       }
+    }
+    if (f.voiced && this.cur.voiced && this.cur.period > 0) {
+      const ratio = f.period / this.cur.period;
+      for (const k of [2, 0.5]) if (Math.abs(ratio / k - 1) < 0.06) { const alt = f.period / k, aD = Math.round(alt / this.D); if (aD > this.tauMinD && aD < this.tauMaxD && this.cmnd[aD] < 0.30) f.period = this.refine(alt); }
     }
     const r = this.raw; r[0] = r[1]; r[1] = r[2]; r[2] = f; this.nRaw++;
     const vc = r[0].voiced + r[1].voiced + r[2].voiced, o = { period: f.period, voiced: this.nRaw >= 3 && vc >= 2, rms };
@@ -157,10 +161,30 @@ class Engine {
     return best;
   }
 
+  // Capture zones: each allowed note owns the range up to the midpoint to its neighbours (no overlap).
+  // Leave the current note only if the smoothed pitch (vibrato averaged out) is clearly past the boundary
+  // for a while, or the raw pitch is deep inside another note (real jump). Same as the plugin.
+  zoneCfg() { const m = this.p.mode; return m === 0 ? [0.090, 0.25, 0.060, 0.40, 0.035] : m === 1 ? [0.075, 0.22, 0.045, 0.40, 0.018] : [0.065, 0.20, 0.030, 0.40, 0.012]; }
+  static past(m, from, to) { const b = 0.5 * (from + to); return to > from ? m - b : b - m; }
+  decideNote(midi, dt, onset) {
+    const [tauDec, margin, hold, fastMargin, fastHold] = this.zoneCfg(), mask = this.p.mask;
+    if (onset) this.decPitch = midi; else this.decPitch += (midi - this.decPitch) * (1 - Math.exp(-dt / tauDec));
+    if (onset || this.curNote < 0 || !(mask & (1 << (((this.curNote % 12) + 12) % 12)))) { this.curNote = this.nearestAllowed(this.decPitch); this.pendSlow = this.pendFast = 0; this.pendSlowNote = -1; return; }
+    const cs = this.nearestAllowed(this.decPitch), cf = this.nearestAllowed(midi); let target = -1;
+    const pf = cf !== this.curNote ? Engine.past(midi, this.curNote, cf) : -1;
+    if (pf > 1.0) target = cf;
+    else if (pf > fastMargin) { this.pendFast += dt; if (this.pendFast >= fastHold) target = cf; }
+    else this.pendFast = 0;
+    if (target < 0 && cs !== this.curNote && Engine.past(this.decPitch, this.curNote, cs) > margin) {
+      if (this.pendSlowNote !== cs) { this.pendSlowNote = cs; this.pendSlow = 0; }
+      this.pendSlow += dt; if (this.pendSlow >= hold) target = cs;
+    } else if (target < 0) { this.pendSlowNote = -1; this.pendSlow = 0; }
+    if (target >= 0) { this.curNote = target; this.pendSlowNote = -1; this.pendSlow = this.pendFast = 0; this.decPitch = midi; }
+  }
+
   updateShift(midi, dt, onset) {
-    const p = this.p, cand = this.nearestAllowed(midi), prev = this.curNote, hyst = p.mode === 0 ? 0.22 : p.mode === 1 ? 0.12 : 0.03;
-    if (onset || this.curNote < 0 || !(p.mask & (1 << (((this.curNote % 12) + 12) % 12)))) this.curNote = cand;
-    else if (cand !== this.curNote && Math.abs(midi - this.curNote) - Math.abs(midi - cand) > hyst) this.curNote = cand;
+    const p = this.p, prev = this.curNote;
+    this.decideNote(midi, dt, onset);
     if (onset || this.curNote !== prev || Math.abs(this.center - midi) > 1) this.center = midi;
     else this.center += (midi - this.center) * (1 - Math.exp(-dt / 0.12));
     const h = Math.max(0, Math.min(1, p.humanize)), desired = this.curNote - (midi + (this.center - midi) * h);

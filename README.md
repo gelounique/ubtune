@@ -14,6 +14,9 @@ Entwickelt von **unique & Mbezza** — Gelo Santino Mares · Meron Negash · [un
 Skalen: Chromatic, Major, Minor, **Pentatonic Major**, **Pentatonic Minor**, Blues, Harmonic Minor, Dorian, Custom (Tasten am Piano anklicken).
 Regler: **Retune Speed** (groß), **Humanize** (mittel), **Formant**, **Mix** (klein), Transpose (±12 st), Output. **Detect Key** (großer Button) hört 8 s zu und setzt Key + Scale.
 
+## Notenwahl (ab 1.1.1)
+Jede erlaubte Note hat eine feste **Fangzone** bis zur Mitte zum nächsten Skalenton – Zonen überlappen nie. Um jede Grenze liegt eine **Totzone**: gewechselt wird erst, wenn die geglättete Tonhöhe (Vibrato rausgerechnet) klar drüber ist und eine Mindestzeit bleibt – oder sofort bei echten Sprüngen (> 1 Halbton tief in einer anderen Zone). Dazu ein Oktavfehler-Schutz in der Erkennung. `tests/chatter_test.cpp` misst das: 184 → 12 Wechsel bei gehaltenen Tönen mit Vibrato direkt auf der Grenze.
+
 ## Formate
 - **Windows 10/11 x64:** VST3 + Standalone — `UBTune-Windows-Setup.exe` (Installer + Deinstaller)
 - **macOS 10.13+ Universal:** VST3 + AU + Standalone — `UBTune-macOS.dmg` (.pkg + Deinstaller)

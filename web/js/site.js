@@ -102,7 +102,7 @@
   async function ensureAudio() {
     if (ctx) { if (ctx.state === 'suspended') await ctx.resume(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
-    await ctx.audioWorklet.addModule('js/ubtune-worklet.js?v=110');
+    await ctx.audioWorklet.addModule('js/ubtune-worklet.js?v=111');
     node = new AudioWorkletNode(ctx, 'ubtune', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
     node.port.onmessage = (e) => {
       if (e.data.type === 'ready') latency = (e.data.latency / e.data.fs) * 1000;
