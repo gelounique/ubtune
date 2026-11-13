@@ -23,7 +23,7 @@ noreloc () {
   pkgbuild --analyze --root "$1" "$2"
   i=0
   while /usr/libexec/PlistBuddy -c "Print :$i" "$2" >/dev/null 2>&1; do
-    /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$2"
+    /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$2" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" "$2"
     i=$((i+1))
   done
   echo "  $2: $i bundle(s) non-relocatable"
