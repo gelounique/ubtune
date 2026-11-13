@@ -1,6 +1,7 @@
-// UBTune 1.1.2 — browser port of the plugin engine (YIN + low-latency TD-PSOLA), runs in an AudioWorklet.
+// UBTune 1.1.3 — browser port of the plugin engine (YIN + low-latency TD-PSOLA), runs in an AudioWorklet.
 // Same algorithm as plugin/source/dsp/UBTuneEngine.h. by unique & Mbezza — UNIQUEBABY
 const MIN_F = 55, MAX_F = 1100, FORMANT_RANGE = 6, DETECT_SEC = 8, MAX_GRAINS = 48, REPORTED_MS = 2, MARKS = 64;
+const PREDICT = 2, PREDICT_JITTER = 0.08, WINDOW_CLEAN = 1.0, WINDOW_LOW = 0.35;
 const SCALES = [null, [0,2,4,5,7,9,11], [0,2,3,5,7,8,10], [0,2,4,7,9], [0,3,5,7,10], [0,3,5,6,7,10], [0,2,3,5,7,8,11], [0,2,3,5,7,9,10]];
 function scaleMask(root, s) { if (!SCALES[s]) return 0xfff; let m = 0; for (const i of SCALES[s]) m |= 1 << ((root + i) % 12); return m; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -28,7 +29,7 @@ class Engine {
     this.grains = Array.from({ length: MAX_GRAINS }, () => ({ src: 0, dst: 0, invH: 0, fF: 1, gain: 1 }));
     this.marks = new Float64Array(MARKS);
     this.reset();
-    this.p = { mode: 1, mask: scaleMask(9, 4), retuneMs: 20, humanize: 0.25, formant: 0, transpose: 0, mix: 1, amount: 1, outGain: 1 };
+    this.p = { mode: 1, mask: scaleMask(9, 4), retuneMs: 20, humanize: 0.25, formant: 0, transpose: 0, mix: 1, amount: 1, outGain: 1, lowLatency: true };
     this.t = { inputMidi: -1, targetNote: -1, correction: 0, level: 0, delayMs: 0, detect: -1, detectedKey: -1, detectedMinor: 0, detectSerial: 0 };
     this.detecting = false; this.pcHist = new Float64Array(12); this.detectVoiced = 0;
   }
@@ -163,6 +164,12 @@ class Engine {
   // ---- pitch marks: first = waveform peak, then cross-correlated period by period ----
   pushMark(m) { this.marks[this.markCount % MARKS] = m; this.markCount++; this.lastMark = m; }
   markAt(i) { return this.marks[i % MARKS]; }
+  predictedPeriod() {   // period of a steady voice (last 4 mark spacings agree), else 0
+    if (this.markCount < 5 || !this.cur.voiced) return 0;
+    const n = this.markCount, p4 = (this.markAt(n - 1) - this.markAt(n - 5)) / 4; let dev = 0;
+    for (let k = n - 4; k < n; k++) dev = Math.max(dev, Math.abs((this.markAt(k) - this.markAt(k - 1)) - p4));
+    return dev < PREDICT_JITTER * p4 && Math.abs(p4 - this.cur.period) < 0.06 * this.cur.period ? p4 : 0;
+  }
   trackMarks() {
     if (!this.cur.voiced) { this.markValid = false; return; }
     const P = this.cur.period, guard = Math.ceil(0.16 * P) + 2, n = this.n;
@@ -284,8 +291,14 @@ class Engine {
       const limit = this.nextMark - H * Math.abs(fF - 1) - 3;
       let src, hop, Hs = H;
       if (voiced) {
-        const onset = !this.wasVoiced, dLo = H * Math.abs(fF - 1) + 3, dHi = dLo + Pdet * 1.05 + Math.ceil(0.16 * Pdet) + H;
-        const a = this.nextMark - clamp(this.delayCur, dLo, dHi), first = Math.max(0, this.markCount - MARKS + 1);
+        const onset = !this.wasVoiced, dLo = H * Math.abs(fF - 1) + 3, first = Math.max(0, this.markCount - MARKS + 1);
+        // newest usable source (confirmed mark, or predicted on a steady voice); delay stays within one window above it
+        let newest = -1e30;
+        for (let k = this.markCount - 1; k >= first; k--) if (this.markAt(k) <= limit) { newest = this.markAt(k); break; }
+        const pred = this.predictedPeriod();
+        if (pred > 0) for (let j = 1; j <= PREDICT; j++) { const m = this.lastMark + j * pred; if (m <= limit) newest = Math.max(newest, m); }
+        const dHi = Math.max(dLo, this.nextMark - newest) + (this.p.lowLatency ? WINDOW_LOW : WINDOW_CLEAN) * Pdet;
+        const a = this.nextMark - clamp(this.delayCur, dLo, dHi);
         let bi = -1, bd = 1e30;
         for (let k = this.markCount - 1; k >= first; k--) {
           const m = this.markAt(k); if (m > limit) continue;
@@ -293,13 +306,16 @@ class Engine {
           if (m < a - 2 * Pdet) break;
         }
         if (bi < 0) bi = this.markCount - 1;
-        src = this.markAt(bi); while (src > limit) src -= Pdet;
+        src = this.markAt(bi);
         let Ploc = Pdet, Pavg = Pdet;
         if (bi > 0 && bi - 1 >= first) {
           Ploc = clamp(src - this.markAt(bi - 1), 0.75 * Pdet, 1.33 * Pdet);
           const back = Math.min(this.p.mode === 2 ? 8 : 4, bi - first), avg = (src - this.markAt(bi - back)) / back;
           if (avg > 0.8 * Pdet && avg < 1.25 * Pdet) Pavg = avg;
         }
+        if (pred > 0 && bi === this.markCount - 1)
+          for (let j = 1; j <= PREDICT; j++) { const m = this.lastMark + j * pred; if (m > limit) break; const dist = Math.abs(m - a); if (dist < bd) { bd = dist; src = m; Ploc = Pavg = pred; } }
+        while (src > limit) src -= Pdet;
         Hs = Ploc / fF;
         const midi = 69 + 12 * Math.log2(this.fs / Pavg / 440), s = this.updateShift(midi, this.lastHop / this.fs, onset);
         const ratio = Math.pow(2, (s + this.p.transpose) / 12);
@@ -330,7 +346,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         if (m.type === 'params') {
           const p = this.eng.p, q = m.p;
           p.mode = q.mode; p.mask = q.mask; p.retuneMs = q.retune; p.humanize = q.humanize / 100; p.formant = q.formant;
-          p.transpose = q.transpose || 0; p.amount = q.amount === undefined ? 1 : q.amount / 100; p.mix = q.bypass ? 0 : q.mix / 100; p.outGain = Math.pow(10, (q.output || 0) / 20);
+          p.transpose = q.transpose || 0; p.amount = q.amount === undefined ? 1 : q.amount / 100; p.lowLatency = q.lowLatency !== false; p.mix = q.bypass ? 0 : q.mix / 100; p.outGain = Math.pow(10, (q.output || 0) / 20);
         } else if (m.type === 'detect') {
           if (this.eng.detecting) { this.eng.detecting = false; this.eng.t.detect = -1; }
           else { this.eng.pcHist.fill(0); this.eng.detectVoiced = 0; this.eng.detecting = true; this.eng.t.detect = 0; }

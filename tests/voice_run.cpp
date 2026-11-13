@@ -42,6 +42,7 @@ int main (int argc, char** argv)
     if (argc > 8) p.humanize = (float) atof (argv[8]);
     if (argc > 9) p.transpose = (float) atof (argv[9]);
     if (argc > 10) p.amount = (float) atof (argv[10]);
+    if (getenv ("UBT_CLEAN")) p.lowLatency = false;
     e.setParams (p);
     FILE* t = fopen (argv[3], "w");
     for (size_t i = 0; i < x.size(); i += 64)

@@ -55,7 +55,7 @@
   }));
 
   /* ---------------- demo ---------------- */
-  const st = { mode: 1, key: 9, scale: 4, retune: 20, humanize: 25, formant: 0, mix: 100, custom: maskOf(9, 4), bypass: false };
+  const st = { mode: 1, key: 9, scale: 4, retune: 20, humanize: 25, formant: 0, mix: 100, custom: maskOf(9, 4), bypass: false, lowLatency: true };
   const demoOrb = new Orb($('#demoOrb'), { n: small ? 900 : 1300, rFrac: 0.33 });
   const demoKeys = new Keys($('#demoKeys'));
   vio.observe($('#demoOrb'));
@@ -84,25 +84,27 @@
     else { st.retune = 0; st.humanize = 0; if (st.scale !== 8) st.scale = [1, 3].includes(st.scale) ? 3 : 4; }
     sync();
   }));
-  $$('.ab button').forEach((b) => b.addEventListener('click', () => { st.bypass = b.dataset.ab === '0'; sync(); }));
+  $$('.ab:not(.lat) button').forEach((b) => b.addEventListener('click', () => { st.bypass = b.dataset.ab === '0'; sync(); }));
+  $$('.lat button').forEach((b) => b.addEventListener('click', () => { st.lowLatency = b.dataset.lat === '1'; sync(); }));
 
   let ctx = null, node = null, micStream = null, micSrc = null, voxSrc = null, tel = null, lastSerial = 0, latency = 0, lastDetected = '';
   function sync() {
     $$('#modeSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.mode === st.mode));
-    $$('.ab button').forEach((b) => b.classList.toggle('on', (b.dataset.ab === '0') === st.bypass));
+    $$('.ab:not(.lat) button').forEach((b) => b.classList.toggle('on', (b.dataset.ab === '0') === st.bypass));
+    $$('.lat button').forEach((b) => b.classList.toggle('on', (b.dataset.lat === '1') === st.lowLatency));
     $('#keySel b').textContent = NOTES[st.key]; keySelect.value = st.key;
     $('#scaleSel b').textContent = SCALE_SHORT[st.scale]; if (st.scale !== 8) scaleSelect.value = st.scale;
     Object.keys(sliders).forEach((k) => { const inp = $('#s-' + k); if (+inp.value !== st[k]) inp.value = st[k]; setFill(inp); $('#o-' + k).textContent = sliders[k](st[k]); });
     const m = mask();
     demoOrb.set({ key: st.key, scaleName: SCALE_NAMES[st.scale], mode: st.mode }); demoKeys.set({ mask: m, key: st.key });
-    if (node) node.port.postMessage({ type: 'params', p: { mode: st.mode, mask: m, retune: st.retune, humanize: st.humanize, formant: st.formant, transpose: 0, mix: st.mix, output: 0, bypass: st.bypass } });
+    if (node) node.port.postMessage({ type: 'params', p: { mode: st.mode, mask: m, retune: st.retune, humanize: st.humanize, formant: st.formant, transpose: 0, mix: st.mix, output: 0, bypass: st.bypass, lowLatency: st.lowLatency } });
   }
   sync();
 
   async function ensureAudio() {
     if (ctx) { if (ctx.state === 'suspended') await ctx.resume(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
-    await ctx.audioWorklet.addModule('js/ubtune-worklet.js?v=112');
+    await ctx.audioWorklet.addModule('js/ubtune-worklet.js?v=113');
     node = new AudioWorkletNode(ctx, 'ubtune', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
     node.port.onmessage = (e) => {
       if (e.data.type === 'ready') latency = (e.data.latency / e.data.fs) * 1000;

@@ -391,12 +391,18 @@ void UBTuneMain::paint (juce::Graphics& g)
     g.setColour (faint); g.setFont (mono (9.5f, true));
     g.drawText (U ("TASTE KLICKEN = NOTE AN / AUS"), juce::Rectangle<int> (outputArea.getRight() + 20, barArea.getY(), 240, 40), juce::Justification::centredLeft);
     {
+        // click = toggle LOW LATENCY (tight, ~half delay) <-> CLEAN (wider window, max. smooth on wobbly voices)
         const double ms = proc.engine.tDelayMs.load();
-        g.setColour (juce::Colours::white); g.fillEllipse ((float) latencyArea.getX() + 8, (float) latencyArea.getCentreY() - 4, 8, 8);
-        g.setColour (dim); g.setFont (mono (9.5f, true));
-        g.drawText ("LOW LATENCY", latencyArea.withTrimmedLeft (24), juce::Justification::centredLeft);
+        const bool low = proc.apvts.getRawParameterValue (ids::lowLatency)->load() > 0.5f;
+        g.setColour (latencyHover ? line.brighter (0.4f) : line);
+        g.drawRoundedRectangle (latencyArea.toFloat().reduced (2.0f, 7.0f), 13.0f, 1.0f);
+        const juce::Rectangle<float> dot ((float) latencyArea.getX() + 10, (float) latencyArea.getCentreY() - 4, 8, 8);
+        g.setColour (juce::Colours::white);
+        if (low) g.fillEllipse (dot); else g.drawEllipse (dot.reduced (0.5f), 1.2f);
+        g.setColour (latencyHover ? text : dim); g.setFont (mono (9.5f, true));
+        g.drawText (low ? "LOW LATENCY" : "CLEAN MODE", latencyArea.withTrimmedLeft (26), juce::Justification::centredLeft);
         g.setColour (text); g.setFont (mono (13.0f, true));
-        g.drawText ((ms > 0.05 ? juce::String (ms, 1) : juce::String ("< 3")) + " MS", latencyArea.withTrimmedRight (6), juce::Justification::centredRight);
+        g.drawText ((ms > 0.05 ? juce::String (ms, 1) : juce::String ("< 2")) + " MS", latencyArea.withTrimmedRight (14), juce::Justification::centredRight);
     }
 
 }
@@ -412,6 +418,20 @@ void UBTuneMain::paintOverChildren (juce::Graphics& g)
 void UBTuneMain::mouseUp (const juce::MouseEvent& e)
 {
     if (logoArea.contains (e.getPosition())) credits.setVisible (true);
+    if (latencyArea.contains (e.getPosition()) && e.mouseWasClicked())
+    {
+        auto* p = proc.apvts.getParameter (ids::lowLatency);
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->getValue() > 0.5f ? 0.0f : 1.0f);
+        p->endChangeGesture();
+        repaint (latencyArea);
+    }
+}
+
+void UBTuneMain::mouseMove (const juce::MouseEvent& e)
+{
+    const bool h = latencyArea.contains (e.getPosition());
+    if (h != latencyHover) { latencyHover = h; setMouseCursor (h ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor); repaint (latencyArea); }
 }
 
 void UBTuneMain::syncFromParams()

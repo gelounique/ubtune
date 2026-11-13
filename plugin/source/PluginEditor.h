@@ -112,6 +112,8 @@ public:
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override { if (latencyHover) { latencyHover = false; setMouseCursor (juce::MouseCursor::NormalCursor); repaint (latencyArea); } }
     void tick (float dt);   // also used by the snapshot tool
     void showCredits (bool b) { credits.setVisible (b); }
 
@@ -135,6 +137,7 @@ private:
     juce::Rectangle<int> logoArea, barArea, outputArea, latencyArea;
     juce::Path knobPanel;
     int lastDetectSerial = 0;
+    bool latencyHover = false;
     juce::String lastDetected;
     double lastTime = 0;
 };

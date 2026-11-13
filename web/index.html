@@ -5,17 +5,17 @@
 <script>if(location.protocol==="http:"&&location.hostname!=="localhost"&&location.hostname!=="127.0.0.1")location.replace("https://"+location.host+location.pathname+location.search+location.hash);</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>UBTune by unique &amp; Mbezza – Low-Latency Autotune für jede DAW (Windows &amp; Mac)</title>
-<meta name="description" content="UBTune: Realtime-Pitch-Correction von unique &amp; Mbezza mit ~3 ms Latenz. Smooth, Pro und Robotic, Pentatonik-Skalen, Detect Key, Shockwave-Orb. VST3, AU &amp; Standalone für Windows und Mac – live im Browser testen.">
+<meta name="description" content="UBTune: Realtime-Pitch-Correction von unique &amp; Mbezza mit ~2 ms Latenz. Smooth, Pro und Robotic, Pentatonik-Skalen, Detect Key, Shockwave-Orb. VST3, AU &amp; Standalone für Windows und Mac – live im Browser testen.">
 <meta name="theme-color" content="#050506">
 <meta property="og:title" content="UBTune – Low-Latency Autotune by unique &amp; Mbezza">
-<meta property="og:description" content="Smooth · Pro · Robotic. ~3 ms Latenz. VST3, AU &amp; Standalone für Windows und Mac. Jetzt live im Browser ausprobieren.">
+<meta property="og:description" content="Smooth · Pro · Robotic. ~2 ms Latenz. VST3, AU &amp; Standalone für Windows und Mac. Jetzt live im Browser ausprobieren.">
 <meta property="og:image" content="https://ubtune.uniquebaby.de/assets/og.jpg">
 <meta property="og:url" content="https://ubtune.uniquebaby.de/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/icon-64.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="css/fonts.css">
-<link rel="stylesheet" href="css/site.css?v=112">
+<link rel="stylesheet" href="css/site.css?v=113">
 </head>
 <body>
 
@@ -33,15 +33,15 @@
 
 <section class="hero" id="hero">
   <div class="hero-txt">
-    <div class="eyebrow reveal">UBTUNE 1.1.2 · BY UNIQUE &amp; MBEZZA</div>
+    <div class="eyebrow reveal">UBTUNE 1.1.3 · BY UNIQUE &amp; MBEZZA</div>
     <h1 class="reveal">Jede Note.<br><span class="silver">Ohne Verzögerung.</span></h1>
-    <p class="lead reveal">Realtime-Autotune für jede DAW – von unsichtbar smooth bis voll Robotic. Rund 3&nbsp;ms Latenz, Live-Monitoring ohne Umweg. VST3, AU &amp; Standalone für Windows &amp; Mac.</p>
+    <p class="lead reveal">Realtime-Autotune für jede DAW – von unsichtbar smooth bis voll Robotic. Rund 2&nbsp;ms Latenz, Live-Monitoring ohne Umweg. VST3, AU &amp; Standalone für Windows &amp; Mac.</p>
     <div class="cta reveal">
       <a class="btn primary" href="#demo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12Z" fill="currentColor"/></svg>Live mit deinem Mikro testen</a>
       <a class="btn ghost" href="#download">Download Windows &amp; Mac</a>
     </div>
     <div class="stats reveal">
-      <div><b>~3 ms</b><span>LATENZ</span></div>
+      <div><b>~2 ms</b><span>LATENZ</span></div>
       <div><b>3</b><span>MODI</span></div>
       <div><b>0,4 ¢</b><span>ROBOTIC-GENAUIGKEIT</span></div>
     </div>
@@ -94,6 +94,8 @@
           <label>FORMANT <output id="o-formant">0.0 st</output><input type="range" id="s-formant" min="-6" max="6" step="0.1" value="0"></label>
           <label>MIX <output id="o-mix">100 %</output><input type="range" id="s-mix" min="0" max="100" step="1" value="100"></label>
         </div>
+        <div class="lbl">LATENZ</div>
+        <div class="ab lat" role="group" aria-label="Latenz"><button data-lat="1" class="on">LOW LATENCY</button><button data-lat="0">CLEAN</button></div>
         <p class="fine" id="demoNote">Tipp: ROBOTIC + Pentatonic Minor und über die Noten rutschen. 🤖</p>
       </div>
     </div>
@@ -159,7 +161,7 @@
       <h2>Alles, was ein Tune braucht.</h2>
     </div>
     <div class="bento">
-      <div class="card panel big reveal"><div class="big-num silver">~3 ms</div><h3>Low Latency. Immer.</h3><p>UBTune schneidet jede Periode aus dem, was du gerade gesungen hast – kein Puffer, kein Umschalten. Echte Verzögerung 1–5 ms in normaler Gesangslage (bei sehr tiefen Stimmen bis ~12 ms – genau eine Schwingung), ab der ersten Sekunde. Direkt in der DAW einsingen, ohne dass es nachhängt.</p></div>
+      <div class="card panel big reveal"><div class="big-num silver">~2 ms</div><h3>Low Latency. Immer.</h3><p>UBTune schneidet jede Periode aus dem, was du gerade gesungen hast – kein Puffer. Bei stabilem Ton sagt UBTune die nächsten Schwingungen voraus, statt auf sie zu warten: rund 2 ms in normaler Gesangslage, bei sehr tiefen Stimmen ca. 4–9 ms. Im Plugin unten rechts (und hier in der Demo) umschaltbar auf CLEAN – etwas mehr Latenz, dafür maximal glatt bei wackligen Stimmen. Direkt in der DAW einsingen, ohne dass es nachhängt.</p></div>
       <div class="card panel reveal"><div class="ico">♪</div><h3>Pentatonik first</h3><p>Pentatonic Minor &amp; Major, dazu Major, Minor, Blues, Harmonic Minor, Dorian, Chromatic und Custom.</p></div>
       <div class="card panel reveal"><div class="ico">◎</div><h3>Detect Key</h3><p>Großer Button, 8 Sekunden singen – Tonart und Dur/Moll sind gesetzt.</p></div>
       <div class="card panel reveal"><div class="ico">⌁</div><h3>Formant</h3><p>±6 Halbtöne Klangfarbe, unabhängig von der Tonhöhe.</p></div>
@@ -173,7 +175,7 @@
 <section class="sec" id="download">
   <div class="wrap">
     <div class="head reveal">
-      <div class="eyebrow">DOWNLOAD · VERSION <span class="ver">1.1.2</span></div>
+      <div class="eyebrow">DOWNLOAD · VERSION <span class="ver">1.1.3</span></div>
       <h2>Holen. Installieren. Tunen.</h2>
       <p>Installer + Deinstaller für beide Systeme. Danach DAW neu starten – UBTune liegt unter <b>UNIQUEBABY</b>.</p>
     </div>
@@ -221,7 +223,7 @@
   </div>
 </footer>
 
-<script src="js/visuals.js?v=112"></script>
-<script src="js/site.js?v=112"></script>
+<script src="js/visuals.js?v=113"></script>
+<script src="js/site.js?v=113"></script>
 </body>
 </html>

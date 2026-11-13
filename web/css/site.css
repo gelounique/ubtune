@@ -102,9 +102,9 @@ code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.06);pad
 .demo-ctrl{padding:20px;display:flex;flex-direction:column}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .lbl{font:600 10.5px var(--mono);letter-spacing:.2em;color:var(--tx3);margin:18px 0 9px}
-.ab{display:grid;grid-template-columns:1fr 1fr;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--rb);padding:4px;margin-top:12px}
-.ab button{border:0;background:none;border-radius:9px;padding:8px;font:600 11px var(--mono);letter-spacing:.18em;color:var(--tx3);cursor:pointer}
-.ab button.on{background:#f4f4f6;color:#050506}
+.ab,.lat{display:grid;grid-template-columns:1fr 1fr;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--rb);padding:4px;margin-top:12px}
+.ab button,.lat button{border:0;background:none;border-radius:9px;padding:8px;font:600 11px var(--mono);letter-spacing:.18em;color:var(--tx3);cursor:pointer}
+.ab button.on,.lat button.on{background:#f4f4f6;color:#050506}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--card2);border:1px solid var(--line);border-radius:var(--rb);padding:4px}
 .seg button{border:0;background:none;border-radius:9px;padding:9px 4px;cursor:pointer;font-weight:700;font-size:14px;color:var(--tx3);transition:background .2s,color .2s}
 .seg button:hover{color:#fff}

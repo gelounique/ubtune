@@ -3,6 +3,7 @@
 
 using APF = juce::AudioParameterFloat;
 using APC = juce::AudioParameterChoice;
+using APB = juce::AudioParameterBool;
 
 juce::AudioProcessorValueTreeState::ParameterLayout UBTuneProcessor::createLayout()
 {
@@ -30,6 +31,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout UBTuneProcessor::createLayou
         juce::AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction ([] (float v, int) { return juce::String ((int) std::round (v)) + " %"; })));
     p.push_back (std::make_unique<APF> (juce::ParameterID { ids::output, 1 }, "Output", juce::NormalisableRange<float> (-24, 12, 0.1f), 0.0f,
         juce::AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction ([] (float v, int) { return (v > 0.05f ? "+" : "") + juce::String (v, 1) + " dB"; })));
+    p.push_back (std::make_unique<APB> (juce::ParameterID { ids::lowLatency, 1 }, "Low Latency", true,
+        juce::AudioParameterBoolAttributes().withStringFromValueFunction ([] (bool v, int) { return v ? juce::String ("Low Latency") : juce::String ("Clean"); })));
     return { p.begin(), p.end() };
 }
 
@@ -48,6 +51,7 @@ UBTuneProcessor::UBTuneProcessor()
     pTranspose = apvts.getRawParameterValue (ids::transpose);
     pMix = apvts.getRawParameterValue (ids::mix);
     pOutput = apvts.getRawParameterValue (ids::output);
+    pLowLatency = apvts.getRawParameterValue (ids::lowLatency);
     customMask = ubt::scaleMask (9, ubt::PentMinor);
     engine.prepare (48000.0, 2);
 }
@@ -134,6 +138,7 @@ void UBTuneProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     p.transpose = std::round (pTranspose->load());
     p.mix = pMix->load() * 0.01f;
     p.outGain = juce::Decibels::decibelsToGain (pOutput->load());
+    p.lowLatency = pLowLatency->load() > 0.5f;
     engine.setParams (p);
 
     engine.process (buffer.getArrayOfWritePointers(), numOut, buffer.getNumSamples());

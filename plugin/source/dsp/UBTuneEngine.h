@@ -5,7 +5,8 @@
 //  - Pitch detection: YIN on the most recent ~26 ms (decimated to ~11-12 kHz) + full-rate refinement
 //  - Pitch shifting:  low-latency TD-PSOLA. Every grain is evaluated lazily at output time and is
 //                     cut from the most recent *already sung* pitch period, so the audio delay is only
-//                     a fraction of one period (~1-6 ms) instead of a fixed worst-case buffer.
+//                     a fraction of one period instead of a fixed buffer; on a steady voice the next periods
+//                     are predicted (LOW LATENCY: ~2 ms in normal singing range).
 //  - Note logic:      scale masks (incl. Pentatonic Major/Minor), hysteresis, retune speed,
 //                     humanize (keeps vibrato), three characters: SMOOTH / PRO / ROBOTIC.
 //                     Notes are chosen like a singer hears them: capture zones with a dead band,
@@ -82,6 +83,7 @@ struct Params
     float transpose   = 0.0f;     // semitones, -12..+12
     float mix         = 1.0f;     // 0..1
     float amount      = 1.0f;     // correction strength 0..1
+    bool  lowLatency  = true;     // tight delay window (about half the delay) vs CLEAN
     float outGain     = 1.0f;     // linear
 };
 
@@ -495,6 +497,17 @@ private:
         return (double) ic + bk + frac;
     }
 
+    /** Period of a steady voice (last 4 mark spacings agree), else 0 -> no prediction. */
+    double predictedPeriod() const
+    {
+        if (kPredict <= 0 || markCount < 5 || ! cur.voiced) return 0.0;
+        const double pAvg4 = (markAt (markCount - 1) - markAt (markCount - 5)) / 4.0;
+        double maxDev = 0.0;
+        for (int64_t k = markCount - 4; k < markCount; ++k)
+            maxDev = std::max (maxDev, std::abs ((markAt (k) - markAt (k - 1)) - pAvg4));
+        return (maxDev < kPredictJitter * pAvg4 && std::abs (pAvg4 - cur.period) < 0.06 * cur.period) ? pAvg4 : 0.0;
+    }
+
     double peakIn (double a, double b, bool choosePolarity)
     {
         const int64_t ia = (int64_t) std::ceil (a), ib = (int64_t) std::floor (b);
@@ -708,7 +721,18 @@ private:
             {
                 const bool onset = ! wasVoiced;
                 const double dLo = H * std::abs (fF - 1.0) + 3.0;
-                const double dHi = dLo + Pdet * 1.05 + std::ceil (0.16 * Pdet) + H;
+                // newest usable source position (confirmed mark, or a predicted one on a steady voice)
+                double newest = -1e30;
+                for (int64_t k = markCount - 1; k >= std::max<int64_t> (0, markCount - kMarks + 1); --k)
+                    if (markAt (k) <= limit) { newest = markAt (k); break; }
+                const double pred = predictedPeriod();
+                if (pred > 0) for (int j = 1; j <= kPredict; ++j) { const double m = lastMark + j * pred; if (m <= limit) newest = std::max (newest, m); }
+                // delay is kept inside ONE period above the minimum: a period is skipped / repeated as soon
+                // as the shift needs it, so the delay never piles up
+                // LOW LATENCY: tight window, follows the newest periods (skips/repeats a period more often)
+                // CLEAN: wider window, fewer period skips on wobbly voices
+                const double win = prm.lowLatency ? kWindowLow : kWindowClean;
+                const double dHi = std::max (dLo, nextMark - newest) + win * Pdet;
                 const double d = std::clamp (delayCur, dLo, dHi);
                 const double a = nextMark - d;
                 // nearest confirmed mark to a, that is still causal
@@ -724,7 +748,6 @@ private:
                 }
                 if (bi < 0) { bi = markCount - 1; }
                 src = markAt (bi);
-                while (src > limit) src -= Pdet;
                 double Ploc = Pdet, Pavg = Pdet;
                 if (bi > 0 && bi - 1 >= first)
                 {
@@ -733,6 +756,19 @@ private:
                     const double avg = (src - markAt (bi - back)) / (double) back;
                     if (avg > 0.8 * Pdet && avg < 1.25 * Pdet) Pavg = avg;
                 }
+                // low-latency: on a steady voice the next periods are predicted from the rhythm of the
+                // last ones instead of waiting for their confirmation (saves ~1 period of delay)
+                if (pred > 0 && bi == markCount - 1)
+                {
+                    for (int j = 1; j <= kPredict; ++j)
+                    {
+                        const double m = lastMark + j * pred;
+                        if (m > limit) break;
+                        const double dist = std::abs (m - a);
+                        if (dist < bd) { bd = dist; src = m; Ploc = Pavg = pred; }
+                    }
+                }
+                while (src > limit) src -= Pdet;
                 Hs = Ploc / fF;
 
                 // pitch + timing from the real mark spacing: exact (no drift) and smooth (no jitter);
@@ -774,6 +810,10 @@ private:
     // ---------------- state ----------------
     static constexpr double kDetectSeconds = 8.0;
     static constexpr int kMaxGrains = 48;
+    static constexpr int kPredict = 2;                 // predicted periods on a steady voice
+    static constexpr double kPredictJitter = 0.08;     // max period-to-period deviation for prediction
+    static constexpr double kWindowClean = 1.0;        // delay window (periods above the minimum): CLEAN
+    static constexpr double kWindowLow = 0.35;         //                                          LOW LATENCY
 
     double fs = 48000.0, fsd = 12000.0;
     int nch = 2, D = 4, tauMaxD = 174, tauMinD = 10, winD = 182, hopD = 32;

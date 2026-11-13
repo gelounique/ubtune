@@ -5,7 +5,7 @@
 namespace ids
 {
     static const juce::String mode { "mode" }, key { "key" }, scale { "scale" }, retune { "retune" },
-        humanize { "humanize" }, formant { "formant" }, transpose { "transpose" }, mix { "mix" }, output { "output" };
+        humanize { "humanize" }, formant { "formant" }, transpose { "transpose" }, mix { "mix" }, output { "output" }, lowLatency { "lowlatency" };
 }
 
 class UBTuneProcessor : public juce::AudioProcessor
@@ -57,7 +57,7 @@ public:
 private:
     std::atomic<int> customMask { 0x0FFF };
     std::atomic<float>* pMode {}, *pKey {}, *pScale {}, *pRetune {}, *pHumanize {}, *pFormant {},
-                      *pTranspose {}, *pMix {}, *pOutput {};
+                      *pTranspose {}, *pMix {}, *pOutput {}, *pLowLatency {};
     int preparedChannels = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (UBTuneProcessor)
