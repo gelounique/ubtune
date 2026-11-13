@@ -22,7 +22,7 @@ Regler: Retune Speed, Humanize, Formant (±6 st), Mix, Transpose (±12 st), Outp
 ## Technik
 - `plugin/source/dsp/UBTuneEngine.h` — reine C++17-Engine: YIN-Pitch-Detection (dezimiert + Full-Rate-Refinement) → Notenlogik mit Hysterese/Retune/Humanize → TD-PSOLA-Pitch-Shift mit Formant-Kontrolle. Latenz ≈ 34 ms (wird der DAW gemeldet → automatisch kompensiert).
 - `plugin/source/ui/` — Partikel-Ring (620 Partikel, 12-Ton-Rad, Kometen-Pitch), Piano C2–C6, Theme (Instrument Sans + JetBrains Mono).
-- `tests/` — `engine_test.cpp` (synthetische Stimme → Engine → WAV), `analyze.py` (misst Cent-Abweichung), `snapshot.cpp` (rendert die GUI als PNG).
+- `tests/` — `engine_test.cpp` (synthetische Stimme → Engine → WAV), `analyze.py` (misst Cent-Abweichung), `snapshot.cpp` (rendert die GUI als PNG), `stress.cpp` (Automation-Stress mit offenem Editor).
 - `web/` — Webseite (GitHub Pages, Branch `gh-pages`) inkl. Live-Browser-Demo.
 
 ## Build
@@ -30,6 +30,6 @@ Regler: Retune Speed, Humanize, Formant (±6 st), Mix, Transpose (±12 st), Outp
 cmake -S . -B build            # holt JUCE 8 automatisch (oder -DJUCE_PATH=...)
 cmake --build build --config Release
 ```
-CI: `.github/workflows/build.yml` baut Windows + macOS, prüft mit pluginval/auval und packt die Installer. Tag `vX.Y.Z` pushen → GitHub-Release.
+CI: `.github/workflows/build.yml` baut Windows + macOS, prüft mit pluginval (Level 7) + auval, packt die Installer und veröffentlicht automatisch das Release `v<Version aus CMakeLists.txt>`. Version hochzählen → neues Release.
 
 © 2026 unique & Mbezza · UNIQUEBABY — alle Rechte vorbehalten.
